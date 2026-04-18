@@ -1,0 +1,35 @@
+name: build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build (Release x64)
+        run: msbuild Rbpo_pz_6sem/Rbpo_pz_6sem.vcxproj /p:Configuration=Release /p:Platform=x64 /m
+
+      - name: Collect artifact files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifact -Force | Out-Null
+          $exe = Get-ChildItem -Recurse -Filter Rbpo_pz_6sem.exe | Where-Object { $_.FullName -match "x64\\Release" } | Select-Object -First 1
+          if (-not $exe) { throw "exe file was not found" }
+          Copy-Item $exe.FullName artifact/
+          Get-ChildItem $exe.Directory.FullName -Filter *.dll | ForEach-Object { Copy-Item $_.FullName artifact/ }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-x64-release
+          path: artifact

@@ -1,0 +1,38 @@
+.vs/
+.vscode/
+
+# Visual C++ cache
+*.VC.db
+*.VC.opendb
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build folders
+Debug/
+Release/
+x64/
+x86/
+ARM64/
+out/
+build/
+
+# CMake generated
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+
+# Artifacts
+*.obj
+*.pdb
+*.ilk
+*.idb
+*.ipdb
+*.iobj
+*.exe
+*.dll
+*.lib
+*.exp
+*.log
