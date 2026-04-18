@@ -17,7 +17,7 @@ jobs:
         uses: microsoft/setup-msbuild@v2
 
       - name: Build (Release x64)
-        run: msbuild Rbpo_pz_6sem/Rbpo_pz_6sem.vcxproj /p:Configuration=Release /p:Platform=x64 /m
+        run: msbuild Rbpo_pz_6sem/Rbpo_pz_6sem.vcxproj /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /m
 
       - name: Collect artifact files
         shell: pwsh

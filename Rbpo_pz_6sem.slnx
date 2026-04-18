@@ -4,5 +4,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="Rbpo_pz_6sem/Rbpo_pz_6sem.vcxproj" />
+  <Project Path="Rbpo_pz_6sem/Rbpo_pz_6sem.vcxproj" Id="d5740350-bb7e-4046-bbd6-73c0dbcbbf87" />
 </Solution>
