@@ -13,8 +13,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Configure CMake (Ninja)
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=cl -DCMAKE_RC_COMPILER=rc
 
       - name: Build (Release)
         run: cmake --build build --parallel
