@@ -13,17 +13,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
+      - name: Configure CMake (Ninja)
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
-      - name: Build (Release x64)
-        run: msbuild Rbpo_pz_6sem/Rbpo_pz_6sem.vcxproj /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /m
+      - name: Build (Release)
+        run: cmake --build build --parallel
 
       - name: Collect artifact files
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path artifact -Force | Out-Null
-          $exe = Get-ChildItem -Recurse -Filter Rbpo_pz_6sem.exe | Where-Object { $_.FullName -match "x64\\Release" } | Select-Object -First 1
+          $exe = Get-ChildItem -Recurse -Path build -Filter Rbpo_pz_6sem.exe | Select-Object -First 1
           if (-not $exe) { throw "exe file was not found" }
           Copy-Item $exe.FullName artifact/
           Get-ChildItem $exe.Directory.FullName -Filter *.dll | ForEach-Object { Copy-Item $_.FullName artifact/ }
@@ -31,5 +31,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-x64-release
+          name: app-release
           path: artifact
