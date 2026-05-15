@@ -2,6 +2,11 @@ cmake_minimum_required(VERSION 3.20)
 
 project(Rbpo_pz_6sem LANGUAGES CXX RC)
 
+# Используем x64 по умолчанию
+if(NOT CMAKE_GENERATOR_PLATFORM)
+    set(CMAKE_GENERATOR_PLATFORM x64)
+endif()
+
 add_executable(Rbpo_pz_6sem WIN32
     Rbpo_pz_6sem/Rbpo_pz_6sem.cpp
     Rbpo_pz_6sem/Rbpo_pz_6sem.h
@@ -18,4 +23,17 @@ target_compile_definitions(Rbpo_pz_6sem PRIVATE
     _WINDOWS
     UNICODE
     _UNICODE
+)
+
+target_compile_options(Rbpo_pz_6sem PRIVATE
+    /Wall
+    /WX-
+    /Oy-
+)
+
+target_link_libraries(Rbpo_pz_6sem PRIVATE
+    user32
+    shell32
+    gdi32
+    comctl32
 )
