@@ -33,7 +33,7 @@
 #include "ServiceControl.h"
 
 #define TYPE_FORMAT_STRING_SIZE   19                                
-#define PROC_FORMAT_STRING_SIZE   281                               
+#define PROC_FORMAT_STRING_SIZE   380                               
 #define EXPR_FORMAT_STRING_SIZE   1                                 
 #define TRANSMIT_AS_TABLE_SIZE    0            
 #define WIRE_MARSHAL_TABLE_SIZE   0            
@@ -250,6 +250,50 @@ long RpcActivate(
                   (PFORMAT_STRING) &ServiceControl__MIDL_ProcFormatString.Format[234],
                   hBinding,
                   activationKey);
+    return ( long  )_RetVal.Simple;
+    
+}
+
+
+long RpcGetAvDatabaseInfo( 
+    /* [in] */ handle_t hBinding,
+    /* [out] */ long *isLoaded,
+    /* [string][out] */ wchar_t **releaseDate,
+    /* [out] */ long *recordCount)
+{
+
+    CLIENT_CALL_RETURN _RetVal;
+
+    _RetVal = NdrClientCall2(
+                  ( PMIDL_STUB_DESC  )&ServiceControl_StubDesc,
+                  (PFORMAT_STRING) &ServiceControl__MIDL_ProcFormatString.Format[258],
+                  hBinding,
+                  isLoaded,
+                  releaseDate,
+                  recordCount);
+    return ( long  )_RetVal.Simple;
+    
+}
+
+
+long RpcScanPath( 
+    /* [in] */ handle_t hBinding,
+    /* [string][in] */ const wchar_t *path,
+    /* [in] */ long isFolder,
+    /* [out] */ long *infected,
+    /* [string][out] */ wchar_t **summary)
+{
+
+    CLIENT_CALL_RETURN _RetVal;
+
+    _RetVal = NdrClientCall2(
+                  ( PMIDL_STUB_DESC  )&ServiceControl_StubDesc,
+                  (PFORMAT_STRING) &ServiceControl__MIDL_ProcFormatString.Format[312],
+                  hBinding,
+                  path,
+                  isFolder,
+                  infected,
+                  summary);
     return ( long  )_RetVal.Simple;
     
 }
@@ -498,7 +542,118 @@ static const ServiceControl_MIDL_PROC_FORMAT_STRING ServiceControl__MIDL_ProcFor
 /* 278 */	0x8,		/* FC_LONG */
 			0x0,		/* 0 */
 
-			0x0
+            0x0,
+
+
+    /* Procedure RpcGetAvDatabaseInfo */
+
+/* 280 */	0x0,		/* 0 */
+            0x48,		/* Old Flags:  */
+/* 282 */	NdrFcLong( 0x0 ),	/* 0 */
+/* 286 */	NdrFcShort( 0x6 ),	/* 6 */
+/* 288 */	NdrFcShort( 0x28 ),	/* ARM64 Stack size/offset = 40 */
+            0x32,		/* FC_BIND_PRIMITIVE */
+            0x0,		/* 0 */
+/* 290 */	NdrFcShort( 0x0 ),	/* ARM64 Stack size/offset = 0 */
+/* 292 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 294 */	NdrFcShort( 0x40 ),	/* 64 */
+            0x45,		/* Oi2 Flags:  srv must size, has return, has ext, */
+            0x4,		/* 4 */
+/* 296 */	0x10,		/* 16 */
+            0x1,		/* Ext Flags:  new corr desc, */
+/* 298 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 300 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 302 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 304 */	NdrFcShort( 0x4 ),	/* 4 */
+/* 306 */	0x4,		/* 4 */
+            0x80,		/* 128 */
+/* 308 */	0x81,		/* 129 */
+            0x82,		/* 130 */
+/* 310 */	0x83,		/* 131 */
+            0x0,		/* 0 */
+
+    /* Parameter isLoaded */
+
+/* 312 */	NdrFcShort( 0x2150 ),	/* Flags:  out, base type, simple ref, srv alloc size=8 */
+/* 314 */	NdrFcShort( 0x8 ),	/* ARM64 Stack size/offset = 8 */
+/* 316 */	0x8,		/* FC_LONG */
+            0x0,		/* 0 */
+
+    /* Parameter releaseDate */
+
+/* 318 */	NdrFcShort( 0x2013 ),	/* Flags:  must size, must free, out, srv alloc size=8 */
+/* 320 */	NdrFcShort( 0x10 ),	/* ARM64 Stack size/offset = 16 */
+/* 322 */	NdrFcShort( 0x6 ),	/* Type Offset=6 */
+
+    /* Parameter recordCount */
+
+/* 324 */	NdrFcShort( 0x2150 ),	/* Flags:  out, base type, simple ref, srv alloc size=8 */
+/* 326 */	NdrFcShort( 0x18 ),	/* ARM64 Stack size/offset = 24 */
+/* 328 */	0x8,		/* FC_LONG */
+            0x0,		/* 0 */
+
+    /* Return value */
+
+/* 330 */	NdrFcShort( 0x70 ),	/* Flags:  out, return, base type, */
+/* 332 */	NdrFcShort( 0x20 ),	/* ARM64 Stack size/offset = 32 */
+/* 334 */	0x8,		/* FC_LONG */
+            0x0,		/* 0 */
+
+    /* Procedure RpcScanPath */
+
+/* 336 */	0x0,		/* 0 */
+            0x48,		/* Old Flags:  */
+/* 338 */	NdrFcLong( 0x0 ),	/* 0 */
+/* 342 */	NdrFcShort( 0x7 ),	/* 7 */
+/* 344 */	NdrFcShort( 0x30 ),	/* ARM64 Stack size/offset = 48 */
+            0x32,		/* FC_BIND_PRIMITIVE */
+            0x0,		/* 0 */
+/* 346 */	NdrFcShort( 0x0 ),	/* ARM64 Stack size/offset = 0 */
+/* 348 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 350 */	NdrFcShort( 0x38 ),	/* 56 */
+            0x47,		/* Oi2 Flags:  srv must size, clt must size, has return, has ext, */
+            0x5,		/* 5 */
+/* 352 */	0xa,		/* 10 */
+            0x1,		/* Ext Flags:  new corr desc, */
+/* 354 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 356 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 358 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 360 */	NdrFcShort( 0x0 ),	/* 0 */
+
+    /* Parameter path */
+
+/* 362 */	NdrFcShort( 0x10b ),	/* Flags:  must size, must free, in, simple ref, */
+/* 364 */	NdrFcShort( 0x8 ),	/* ARM64 Stack size/offset = 8 */
+/* 366 */	NdrFcShort( 0x10 ),	/* Type Offset=16 */
+
+    /* Parameter isFolder */
+
+/* 368 */	NdrFcShort( 0x48 ),	/* Flags:  in, base type, */
+/* 370 */	NdrFcShort( 0x10 ),	/* ARM64 Stack size/offset = 16 */
+/* 372 */	0x8,		/* FC_LONG */
+            0x0,		/* 0 */
+
+    /* Parameter infected */
+
+/* 374 */	NdrFcShort( 0x2150 ),	/* Flags:  out, base type, simple ref, srv alloc size=8 */
+/* 376 */	NdrFcShort( 0x18 ),	/* ARM64 Stack size/offset = 24 */
+/* 378 */	0x8,		/* FC_LONG */
+            0x0,		/* 0 */
+
+    /* Parameter summary */
+
+/* 380 */	NdrFcShort( 0x2013 ),	/* Flags:  must size, must free, out, srv alloc size=8 */
+/* 382 */	NdrFcShort( 0x20 ),	/* ARM64 Stack size/offset = 32 */
+/* 384 */	NdrFcShort( 0x6 ),	/* Type Offset=6 */
+
+    /* Return value */
+
+/* 386 */	NdrFcShort( 0x70 ),	/* Flags:  out, return, base type, */
+/* 388 */	NdrFcShort( 0x28 ),	/* ARM64 Stack size/offset = 40 */
+/* 390 */	0x8,		/* FC_LONG */
+            0x0,		/* 0 */
+
+            0x0
         }
     };
 
@@ -536,7 +691,9 @@ static const unsigned short ServiceControl_FormatStringOffsetTable[] =
     84,
     136,
     174,
-    234
+    234,
+    280,
+    336
     };
 
 
