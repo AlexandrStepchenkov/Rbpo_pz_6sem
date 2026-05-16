@@ -197,15 +197,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Rbpo_pz_6sem.cpp" />
-    <ClCompile Include="rpc\ServiceControl_c_x64.c">
-      <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="rpc\ServiceControl_c_win32.c">
-      <ExcludedFromBuild Condition="'$(Platform)'!='Win32'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="rpc\ServiceControl_c_arm64.c">
-      <ExcludedFromBuild Condition="'$(Platform)'!='ARM64'">true</ExcludedFromBuild>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Rbpo_pz_6sem.rc" />
