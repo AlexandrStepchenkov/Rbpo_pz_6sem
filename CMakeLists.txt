@@ -2,10 +2,15 @@ cmake_minimum_required(VERSION 3.20)
 
 project(Rbpo_pz_6sem LANGUAGES CXX RC)
 
-# Используем x64 по умолчанию
 if(NOT CMAKE_GENERATOR_PLATFORM)
     set(CMAKE_GENERATOR_PLATFORM x64)
 endif()
+
+set(RBPO_COMMON_INCLUDES
+    Rbpo_pz_6sem
+    Rbpo_pz_6sem/common
+    Rbpo_pz_6sem/rpc
+)
 
 add_executable(Rbpo_pz_6sem WIN32
     Rbpo_pz_6sem/Rbpo_pz_6sem.cpp
@@ -16,7 +21,7 @@ add_executable(Rbpo_pz_6sem WIN32
     Rbpo_pz_6sem/Rbpo_pz_6sem.rc
 )
 
-target_include_directories(Rbpo_pz_6sem PRIVATE Rbpo_pz_6sem)
+target_include_directories(Rbpo_pz_6sem PRIVATE ${RBPO_COMMON_INCLUDES})
 target_compile_features(Rbpo_pz_6sem PRIVATE cxx_std_20)
 
 target_compile_definitions(Rbpo_pz_6sem PRIVATE
@@ -36,4 +41,31 @@ target_link_libraries(Rbpo_pz_6sem PRIVATE
     shell32
     gdi32
     comctl32
+    rpcrt4
+    advapi32
+)
+
+add_executable(RbpoPz6SemService
+    Rbpo_pz_6sem/service/RbpoPzService.cpp
+)
+
+target_include_directories(RbpoPz6SemService PRIVATE ${RBPO_COMMON_INCLUDES})
+target_compile_features(RbpoPz6SemService PRIVATE cxx_std_20)
+
+target_compile_definitions(RbpoPz6SemService PRIVATE
+    UNICODE
+    _UNICODE
+)
+
+target_compile_options(RbpoPz6SemService PRIVATE
+    /Wall
+    /WX-
+    /Oy-
+)
+
+target_link_libraries(RbpoPz6SemService PRIVATE
+    rpcrt4
+    wtsapi32
+    userenv
+    advapi32
 )
