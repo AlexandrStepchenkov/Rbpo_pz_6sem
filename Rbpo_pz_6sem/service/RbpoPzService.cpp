@@ -6,8 +6,17 @@
 #include <string>
 #include <cstdlib>
 #include <array>
+#include <sstream>
+#include <algorithm>
+#include <chrono>
+#include <thread>
+#include <winhttp.h>
+#include <iphlpapi.h>
+#include <wincrypt.h>
 #include <Aclapi.h>
 #include <Accctrl.h>
+
+#pragma warning(disable : 4710 4711)
 
 #include "../common/AppConfig.h"
 #include "../rpc/ServiceControl.h"
@@ -36,14 +45,65 @@ SERVICE_STATUS g_serviceStatus{};
 CRITICAL_SECTION g_lock;
 std::vector<PROCESS_INFORMATION> g_apps;
 
+struct AuthState
+{
+    bool isAuthenticated = false;
+    std::wstring username;
+    std::wstring accessToken;
+    std::wstring refreshToken;
+    ULONGLONG accessExpires = 0;
+    ULONGLONG refreshExpires = 0;
+};
+
+struct LicenseState
+{
+    bool hasTicket = false;
+    bool blocked = false;
+    std::wstring expirationDate;
+    ULONGLONG nextRefresh = 0;
+    std::wstring activationKey;
+};
+
+AuthState g_authState;
+LicenseState g_licenseState;
+std::wstring g_deviceMac;
+std::wstring g_deviceName;
+std::wstring g_productId;
+std::wstring g_deviceMacBase;
+HANDLE g_workerStopEvent = nullptr;
+HANDLE g_workerWakeEvent = nullptr;
+HANDLE g_workerThread = nullptr;
+
 std::wstring GetSelfDirectory();
+
+std::wstring GetApiHost()
+{
+    wchar_t buf[256]{};
+    DWORD len = GetEnvironmentVariableW(L"RBPO_API_HOST", buf, ARRAYSIZE(buf));
+    if (len > 0 && len < ARRAYSIZE(buf))
+    {
+        return std::wstring(buf, len);
+    }
+    return kDefaultApiHost;
+}
+
+unsigned short GetApiPort()
+{
+    wchar_t buf[32]{};
+    DWORD len = GetEnvironmentVariableW(L"RBPO_API_PORT", buf, ARRAYSIZE(buf));
+    if (len > 0 && len < ARRAYSIZE(buf))
+    {
+        return static_cast<unsigned short>(_wtoi(buf));
+    }
+    return kDefaultApiPort;
+}
 
 std::wstring GetLogDirectory()
 {
     wchar_t programData[MAX_PATH]{};
     DWORD len = GetEnvironmentVariableW(L"ProgramData", programData, MAX_PATH);
     std::wstring base = len > 0 ? std::wstring(programData, len) : GetSelfDirectory();
-    std::wstring dir = base + L"\\RbpoPz6sem";
+    std::wstring dir = base + L"\\RbpoPz";
     CreateDirectoryW(dir.c_str(), nullptr);
     return dir;
 }
@@ -92,6 +152,567 @@ void LogWin32Error(const std::wstring& context, DWORD error = GetLastError())
     wchar_t errorText[32]{};
     swprintf_s(errorText, L"%lu", error);
     LogMessage(context + L" (error=" + errorText + L")");
+}
+
+std::string WideToUtf8(const std::wstring& value)
+{
+    if (value.empty())
+    {
+        return {};
+    }
+
+    int size = WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (size <= 0)
+    {
+        return {};
+    }
+
+    std::string result(static_cast<size_t>(size - 1), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, result.data(), size, nullptr, nullptr);
+    return result;
+}
+
+std::wstring Utf8ToWide(const std::string& value)
+{
+    if (value.empty())
+    {
+        return {};
+    }
+
+    int size = MultiByteToWideChar(CP_UTF8, 0, value.c_str(), -1, nullptr, 0);
+    if (size <= 0)
+    {
+        return {};
+    }
+
+    std::wstring result(static_cast<size_t>(size - 1), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, value.c_str(), -1, result.data(), size);
+    return result;
+}
+
+std::string JsonEscape(const std::string& value)
+{
+    std::string out;
+    out.reserve(value.size());
+    for (char c : value)
+    {
+        switch (c)
+        {
+        case '\\':
+            out += "\\\\";
+            break;
+        case '"':
+            out += "\\\"";
+            break;
+        case '\n':
+            out += "\\n";
+            break;
+        case '\r':
+            out += "\\r";
+            break;
+        case '\t':
+            out += "\\t";
+            break;
+        default:
+            out.push_back(c);
+            break;
+        }
+    }
+    return out;
+}
+
+bool ExtractJsonString(const std::string& json, const std::string& key, std::string& value)
+{
+    const std::string pattern = "\"" + key + "\"";
+    size_t pos = json.find(pattern);
+    if (pos == std::string::npos)
+    {
+        return false;
+    }
+
+    pos = json.find(':', pos + pattern.size());
+    if (pos == std::string::npos)
+    {
+        return false;
+    }
+
+    pos = json.find('"', pos);
+    if (pos == std::string::npos)
+    {
+        return false;
+    }
+
+    size_t end = json.find('"', pos + 1);
+    if (end == std::string::npos)
+    {
+        return false;
+    }
+
+    value = json.substr(pos + 1, end - pos - 1);
+    return true;
+}
+
+bool ExtractJsonNumber(const std::string& json, const std::string& key, long long& value)
+{
+    const std::string pattern = "\"" + key + "\"";
+    size_t pos = json.find(pattern);
+    if (pos == std::string::npos)
+    {
+        return false;
+    }
+
+    pos = json.find(':', pos + pattern.size());
+    if (pos == std::string::npos)
+    {
+        return false;
+    }
+
+    size_t start = json.find_first_of("-0123456789", pos + 1);
+    if (start == std::string::npos)
+    {
+        return false;
+    }
+
+    size_t end = json.find_first_not_of("0123456789", start);
+    value = std::stoll(json.substr(start, end - start));
+    return true;
+}
+
+bool ExtractJsonObject(const std::string& json, const std::string& key, std::string& object)
+{
+    const std::string pattern = "\"" + key + "\"";
+    size_t pos = json.find(pattern);
+    if (pos == std::string::npos)
+    {
+        return false;
+    }
+
+    pos = json.find('{', pos);
+    if (pos == std::string::npos)
+    {
+        return false;
+    }
+
+    size_t depth = 0;
+    const size_t start = pos;
+    for (size_t i = pos; i < json.size(); ++i)
+    {
+        if (json[i] == '{')
+        {
+            ++depth;
+        }
+        else if (json[i] == '}')
+        {
+            --depth;
+            if (depth == 0)
+            {
+                object = json.substr(start, i - start + 1);
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool ExtractJsonBoolean(const std::string& json, const std::string& key, bool& value)
+{
+    const std::string pattern = "\"" + key + "\"";
+    size_t pos = json.find(pattern);
+    if (pos == std::string::npos)
+    {
+        return false;
+    }
+
+    pos = json.find(':', pos + pattern.size());
+    if (pos == std::string::npos)
+    {
+        return false;
+    }
+
+    size_t start = json.find_first_not_of(" \t\r\n", pos + 1);
+    if (start == std::string::npos)
+    {
+        return false;
+    }
+
+    if (json.compare(start, 4, "true") == 0)
+    {
+        value = true;
+        return true;
+    }
+
+    if (json.compare(start, 5, "false") == 0)
+    {
+        value = false;
+        return true;
+    }
+
+    return false;
+}
+
+std::string Base64UrlDecode(const std::string& input)
+{
+    std::string base64 = input;
+    std::replace(base64.begin(), base64.end(), '-', '+');
+    std::replace(base64.begin(), base64.end(), '_', '/');
+    while (base64.size() % 4 != 0)
+    {
+        base64.push_back('=');
+    }
+
+    DWORD required = 0;
+    if (!CryptStringToBinaryA(base64.c_str(), static_cast<DWORD>(base64.size()), CRYPT_STRING_BASE64, nullptr, &required, nullptr, nullptr))
+    {
+        return {};
+    }
+
+    std::string output(required, '\0');
+    if (!CryptStringToBinaryA(base64.c_str(), static_cast<DWORD>(base64.size()), CRYPT_STRING_BASE64, reinterpret_cast<BYTE*>(output.data()), &required, nullptr, nullptr))
+    {
+        return {};
+    }
+
+    output.resize(required);
+    return output;
+}
+
+ULONGLONG GetNowFileTime()
+{
+    FILETIME ft{};
+    GetSystemTimeAsFileTime(&ft);
+    ULARGE_INTEGER uli{};
+    uli.LowPart = ft.dwLowDateTime;
+    uli.HighPart = ft.dwHighDateTime;
+    return uli.QuadPart;
+}
+
+ULONGLONG UnixSecondsToFileTime(unsigned long long seconds)
+{
+    const unsigned long long epochDiff = 11644473600ULL;
+    unsigned long long ft = (seconds + epochDiff) * 10000000ULL;
+    return ft;
+}
+
+bool ParseJwtExp(const std::string& token, ULONGLONG& expiresAt, std::string& subject)
+{
+    size_t firstDot = token.find('.');
+    size_t secondDot = token.find('.', firstDot == std::string::npos ? firstDot : firstDot + 1);
+    if (firstDot == std::string::npos || secondDot == std::string::npos)
+    {
+        return false;
+    }
+
+    std::string payload = token.substr(firstDot + 1, secondDot - firstDot - 1);
+    std::string decoded = Base64UrlDecode(payload);
+    if (decoded.empty())
+    {
+        return false;
+    }
+
+    long long exp = 0;
+    if (!ExtractJsonNumber(decoded, "exp", exp))
+    {
+        return false;
+    }
+
+    std::string sub;
+    ExtractJsonString(decoded, "sub", sub);
+    subject = sub;
+    expiresAt = UnixSecondsToFileTime(static_cast<unsigned long long>(exp));
+    return true;
+}
+
+struct HttpResponse
+{
+    DWORD status = 0;
+    std::string body;
+};
+
+std::wstring QuoteForCmd(const std::wstring& value)
+{
+    std::wstring escaped = L"\"";
+    for (wchar_t c : value)
+    {
+        if (c == L'\"')
+        {
+            escaped += L"\\\"";
+        }
+        else
+        {
+            escaped.push_back(c);
+        }
+    }
+    escaped += L"\"";
+    return escaped;
+}
+
+bool RunProcessCaptureOutput(const std::wstring& command, std::string& output)
+{
+    SECURITY_ATTRIBUTES sa{};
+    sa.nLength = sizeof(sa);
+    sa.bInheritHandle = TRUE;
+
+    HANDLE readPipe = nullptr;
+    HANDLE writePipe = nullptr;
+    if (!CreatePipe(&readPipe, &writePipe, &sa, 0))
+    {
+        return false;
+    }
+
+    SetHandleInformation(readPipe, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdOutput = writePipe;
+    si.hStdError = writePipe;
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+
+    PROCESS_INFORMATION pi{};
+    std::wstring cmdLine = L"cmd.exe /C " + command;
+    BOOL created = CreateProcessW(
+        nullptr,
+        cmdLine.data(),
+        nullptr,
+        nullptr,
+        TRUE,
+        CREATE_NO_WINDOW,
+        nullptr,
+        nullptr,
+        &si,
+        &pi);
+
+    CloseHandle(writePipe);
+
+    if (!created)
+    {
+        CloseHandle(readPipe);
+        return false;
+    }
+
+    std::string buffer;
+    char chunk[4096]{};
+    DWORD read = 0;
+    while (ReadFile(readPipe, chunk, sizeof(chunk), &read, nullptr) && read > 0)
+    {
+        buffer.append(chunk, chunk + read);
+    }
+
+    WaitForSingleObject(pi.hProcess, 10000);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    CloseHandle(readPipe);
+
+    output = buffer;
+    return true;
+}
+
+bool SendHttpsRequestCurlFallback(const std::wstring& method, const std::wstring& path, const std::string& body, const std::wstring& accessToken, HttpResponse& response)
+{
+    wchar_t tempDir[MAX_PATH]{};
+    DWORD len = GetTempPathW(MAX_PATH, tempDir);
+    if (len == 0 || len >= MAX_PATH)
+    {
+        return false;
+    }
+
+    wchar_t tempFile[MAX_PATH]{};
+    if (GetTempFileNameW(tempDir, L"zpv", 0, tempFile) == 0)
+    {
+        return false;
+    }
+
+    HANDLE file = CreateFileW(tempFile, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE)
+    {
+        DeleteFileW(tempFile);
+        return false;
+    }
+
+    DWORD written = 0;
+    WriteFile(file, body.data(), static_cast<DWORD>(body.size()), &written, nullptr);
+    CloseHandle(file);
+
+    const std::wstring host = GetApiHost();
+    const unsigned short port = GetApiPort();
+    std::wstring url = L"https://" + host + L":" + std::to_wstring(port) + path;
+    std::wstring command = L"curl.exe -k -s -X " + method +
+        L" " + QuoteForCmd(url) +
+        L" -H \"Content-Type: application/json\"";
+
+    if (!accessToken.empty())
+    {
+        command += L" -H " + QuoteForCmd(L"Authorization: Bearer " + accessToken);
+    }
+
+    command += L" --data-binary @" + QuoteForCmd(tempFile) + L" -w \"\\n%{http_code}\"";
+
+    std::string output;
+    bool ok = RunProcessCaptureOutput(command, output);
+    DeleteFileW(tempFile);
+    if (!ok || output.empty())
+    {
+        return false;
+    }
+
+    size_t pos = output.find_last_of('\n');
+    if (pos == std::string::npos)
+    {
+        return false;
+    }
+
+    std::string statusText = output.substr(pos + 1);
+    while (!statusText.empty() && (statusText.back() == '\r' || statusText.back() == '\n' || statusText.back() == ' ' || statusText.back() == '\t'))
+    {
+        statusText.pop_back();
+    }
+
+    response.body = output.substr(0, pos);
+    response.status = static_cast<DWORD>(atoi(statusText.c_str()));
+    LogMessage(L"curl fallback " + method + L" " + path + L" -> status=" + std::to_wstring(response.status));
+    return response.status != 0;
+}
+
+bool SendHttpsRequest(const std::wstring& method, const std::wstring& path, const std::string& body, const std::wstring& accessToken, HttpResponse& response)
+{
+    HINTERNET hSession = WinHttpOpen(L"RbpoPzService/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!hSession)
+    {
+        LogWin32Error(L"WinHttpOpen failed");
+        return false;
+    }
+
+    DWORD secureProtocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
+    WinHttpSetOption(hSession, WINHTTP_OPTION_SECURE_PROTOCOLS, &secureProtocols, sizeof(secureProtocols));
+
+    const std::wstring apiHost = GetApiHost();
+    HINTERNET hConnect = WinHttpConnect(hSession, apiHost.c_str(), GetApiPort(), 0);
+    if (!hConnect)
+    {
+        LogWin32Error(L"WinHttpConnect failed");
+        WinHttpCloseHandle(hSession);
+        return false;
+    }
+
+    HINTERNET hRequest = WinHttpOpenRequest(hConnect, method.c_str(), path.c_str(), nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
+    if (!hRequest)
+    {
+        LogWin32Error(L"WinHttpOpenRequest failed");
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        return false;
+    }
+
+    DWORD flags = SECURITY_FLAG_IGNORE_UNKNOWN_CA | SECURITY_FLAG_IGNORE_CERT_CN_INVALID | SECURITY_FLAG_IGNORE_CERT_DATE_INVALID | SECURITY_FLAG_IGNORE_CERT_WRONG_USAGE;
+#ifdef SECURITY_FLAG_IGNORE_WEAK_SIGNATURE
+    flags |= SECURITY_FLAG_IGNORE_WEAK_SIGNATURE;
+#endif
+    WinHttpSetOption(hRequest, WINHTTP_OPTION_SECURITY_FLAGS, &flags, sizeof(flags));
+
+    std::wstring headers = L"Content-Type: application/json\r\n";
+    if (!accessToken.empty())
+    {
+        headers += L"Authorization: Bearer " + accessToken + L"\r\n";
+    }
+
+    auto sendRequest = [&]() -> BOOL
+    {
+        return WinHttpSendRequest(
+            hRequest,
+            headers.c_str(),
+            static_cast<DWORD>(headers.size()),
+            body.empty() ? WINHTTP_NO_REQUEST_DATA : const_cast<char*>(body.data()),
+            static_cast<DWORD>(body.size()),
+            static_cast<DWORD>(body.size()),
+            0);
+    };
+
+    BOOL sent = sendRequest();
+    if (!sent)
+    {
+        DWORD error = GetLastError();
+        if (error == ERROR_WINHTTP_SECURE_FAILURE)
+        {
+            LogMessage(L"WinHttpSendRequest secure failure, retry with ignored cert checks");
+            WinHttpSetOption(hRequest, WINHTTP_OPTION_SECURITY_FLAGS, &flags, sizeof(flags));
+            sent = sendRequest();
+            if (!sent)
+            {
+                DWORD retryError = GetLastError();
+                WinHttpCloseHandle(hRequest);
+                WinHttpCloseHandle(hConnect);
+                WinHttpCloseHandle(hSession);
+
+                if (retryError == ERROR_WINHTTP_SECURE_FAILURE)
+                {
+                    if (SendHttpsRequestCurlFallback(method, path, body, accessToken, response))
+                    {
+                        return true;
+                    }
+                }
+
+                LogWin32Error(L"WinHttpSendRequest failed", retryError);
+                return false;
+            }
+        }
+        else
+        {
+            LogWin32Error(L"WinHttpSendRequest failed", error);
+            WinHttpCloseHandle(hRequest);
+            WinHttpCloseHandle(hConnect);
+            WinHttpCloseHandle(hSession);
+            return false;
+        }
+    }
+
+    if (!WinHttpReceiveResponse(hRequest, nullptr))
+    {
+        LogWin32Error(L"WinHttpReceiveResponse failed");
+        WinHttpCloseHandle(hRequest);
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        return false;
+    }
+
+    DWORD status = 0;
+    DWORD statusSize = sizeof(status);
+    WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX, &status, &statusSize, WINHTTP_NO_HEADER_INDEX);
+    response.status = status;
+
+    std::string responseBody;
+    for (;;)
+    {
+        DWORD size = 0;
+        if (!WinHttpQueryDataAvailable(hRequest, &size))
+        {
+            LogWin32Error(L"WinHttpQueryDataAvailable failed");
+            break;
+        }
+
+        if (size == 0)
+        {
+            break;
+        }
+
+        std::string buffer(size, '\0');
+        DWORD read = 0;
+        if (!WinHttpReadData(hRequest, buffer.data(), size, &read))
+        {
+            LogWin32Error(L"WinHttpReadData failed");
+            break;
+        }
+
+        buffer.resize(read);
+        responseBody += buffer;
+    }
+
+    response.body = responseBody;
+    LogMessage(L"HTTP " + method + L" " + path + L" -> status=" + std::to_wstring(response.status));
+    WinHttpCloseHandle(hRequest);
+    WinHttpCloseHandle(hConnect);
+    WinHttpCloseHandle(hSession);
+    return true;
 }
 
 extern "C" void* __RPC_USER MIDL_user_allocate(size_t size)
@@ -190,6 +811,483 @@ std::wstring GetSelfDirectory()
 std::wstring GetTrayAppPath()
 {
     return GetSelfDirectory() + L"\\" + kTrayAppExeName;
+}
+
+std::wstring FormatMacAddress(const BYTE* address, ULONG length)
+{
+    if (!address || length == 0)
+    {
+        return L"";
+    }
+
+    std::wstringstream ss;
+    for (ULONG i = 0; i < length; ++i)
+    {
+        if (i > 0)
+        {
+            ss << L":";
+        }
+        ss << std::hex << std::uppercase;
+        ss.width(2);
+        ss.fill(L'0');
+        ss << static_cast<int>(address[i]);
+    }
+    return ss.str();
+}
+
+std::wstring GetPrimaryMacAddress()
+{
+    ULONG size = 0;
+    if (GetAdaptersInfo(nullptr, &size) != ERROR_BUFFER_OVERFLOW || size == 0)
+    {
+        return L"";
+    }
+
+    std::vector<BYTE> buffer(size);
+    auto* adapters = reinterpret_cast<IP_ADAPTER_INFO*>(buffer.data());
+    if (GetAdaptersInfo(adapters, &size) != ERROR_SUCCESS)
+    {
+        return L"";
+    }
+
+    for (IP_ADAPTER_INFO* adapter = adapters; adapter != nullptr; adapter = adapter->Next)
+    {
+        if (adapter->Type == MIB_IF_TYPE_LOOPBACK || adapter->AddressLength == 0)
+        {
+            continue;
+        }
+
+        std::wstring mac = FormatMacAddress(adapter->Address, adapter->AddressLength);
+        if (!mac.empty())
+        {
+            return mac;
+        }
+    }
+
+    return L"";
+}
+
+void EnsureDeviceInfo()
+{
+    if (g_deviceName.empty())
+    {
+        wchar_t name[MAX_COMPUTERNAME_LENGTH + 1]{};
+        DWORD size = MAX_COMPUTERNAME_LENGTH + 1;
+        if (GetComputerNameW(name, &size))
+        {
+            g_deviceName = name;
+        }
+    }
+
+    if (g_deviceMacBase.empty())
+    {
+        g_deviceMacBase = GetPrimaryMacAddress();
+    }
+
+    if (g_deviceMac.empty())
+    {
+        g_deviceMac = g_deviceMacBase;
+    }
+}
+
+void UpdateDeviceIdentityForUser(const std::wstring& username)
+{
+    EnsureDeviceInfo();
+    if (username.empty())
+    {
+        g_deviceMac = g_deviceMacBase;
+        return;
+    }
+
+    g_deviceMac = g_deviceMacBase + L"-" + username;
+}
+
+void ClearAuthState()
+{
+    g_authState = AuthState{};
+}
+
+void ClearLicenseState()
+{
+    g_licenseState = LicenseState{};
+}
+
+bool UpdateAuthStateFromResponse(const std::string& body, const std::wstring& usernameOverride)
+{
+    std::string accessToken;
+    std::string refreshToken;
+    if (!ExtractJsonString(body, "accessToken", accessToken) || !ExtractJsonString(body, "refreshToken", refreshToken))
+    {
+        return false;
+    }
+
+    ULONGLONG accessExp = 0;
+    ULONGLONG refreshExp = 0;
+    std::string sub;
+    if (!ParseJwtExp(accessToken, accessExp, sub))
+    {
+        accessExp = GetNowFileTime() + 15ULL * 60ULL * 10000000ULL;
+    }
+
+    std::string refreshSub;
+    if (!ParseJwtExp(refreshToken, refreshExp, refreshSub))
+    {
+        refreshExp = GetNowFileTime() + 30ULL * 24ULL * 60ULL * 60ULL * 10000000ULL;
+    }
+
+    std::wstring username = usernameOverride;
+    if (username.empty() && !sub.empty())
+    {
+        username = Utf8ToWide(sub);
+    }
+
+    EnterCriticalSection(&g_lock);
+    g_authState.isAuthenticated = true;
+    g_authState.username = username;
+    g_authState.accessToken = Utf8ToWide(accessToken);
+    g_authState.refreshToken = Utf8ToWide(refreshToken);
+    g_authState.accessExpires = accessExp;
+    g_authState.refreshExpires = refreshExp;
+    LeaveCriticalSection(&g_lock);
+    return true;
+}
+
+bool UpdateLicenseStateFromResponse(const std::string& body, const std::wstring& activationKey)
+{
+    std::string ticketBody = body;
+    std::string nestedTicket;
+    if (ExtractJsonObject(body, "ticket", nestedTicket))
+    {
+        ticketBody = nestedTicket;
+    }
+
+    long long lifetimeSeconds = 0;
+    std::string expirationDate;
+    bool blocked = false;
+
+    if (!ExtractJsonNumber(ticketBody, "ticketLifetimeSeconds", lifetimeSeconds) ||
+        !ExtractJsonString(ticketBody, "expirationDate", expirationDate))
+    {
+        return false;
+    }
+
+    ExtractJsonBoolean(ticketBody, "blocked", blocked);
+    ULONGLONG now = GetNowFileTime();
+    ULONGLONG refreshDelay = static_cast<ULONGLONG>(lifetimeSeconds) * 10000000ULL;
+    ULONGLONG nextRefresh = now + (refreshDelay * 8 / 10);
+
+    EnterCriticalSection(&g_lock);
+    g_licenseState.hasTicket = true;
+    g_licenseState.blocked = blocked;
+    g_licenseState.expirationDate = Utf8ToWide(expirationDate);
+    g_licenseState.nextRefresh = nextRefresh;
+    if (!activationKey.empty())
+    {
+        g_licenseState.activationKey = activationKey;
+    }
+    LeaveCriticalSection(&g_lock);
+    return true;
+}
+
+bool EnsureProductId(const std::wstring& accessToken)
+{
+    if (!g_productId.empty())
+    {
+        return true;
+    }
+
+    HttpResponse response;
+    if (!SendHttpsRequest(L"GET", L"/api/products", "", accessToken, response) || response.status != 200)
+    {
+        return false;
+    }
+
+    std::string id;
+    if (ExtractJsonString(response.body, "id", id))
+    {
+        g_productId = Utf8ToWide(id);
+        return true;
+    }
+
+    std::string body = "{\"name\":\"Rbpo Antivirus\",\"isBlocked\":false}";
+    HttpResponse createResponse;
+    if (!SendHttpsRequest(L"POST", L"/api/products", body, accessToken, createResponse) || (createResponse.status != 200 && createResponse.status != 201))
+    {
+        return false;
+    }
+
+    if (ExtractJsonString(createResponse.body, "id", id))
+    {
+        g_productId = Utf8ToWide(id);
+        return true;
+    }
+
+    return false;
+}
+
+bool CheckLicense(const std::wstring& accessToken)
+{
+    EnsureDeviceInfo();
+    if (!EnsureProductId(accessToken) || g_productId.empty())
+    {
+        return false;
+    }
+
+    std::string body = "{\"deviceMac\":\"" + JsonEscape(WideToUtf8(g_deviceMac)) +
+        "\",\"productId\":\"" + JsonEscape(WideToUtf8(g_productId)) + "\"}";
+
+    HttpResponse response;
+    if (!SendHttpsRequest(L"POST", L"/api/licenses/check", body, accessToken, response) || response.status != 200)
+    {
+        return false;
+    }
+
+    std::wstring activationKey;
+    EnterCriticalSection(&g_lock);
+    activationKey = g_licenseState.activationKey;
+    LeaveCriticalSection(&g_lock);
+    return UpdateLicenseStateFromResponse(response.body, activationKey);
+}
+
+bool ActivateLicense(const std::wstring& accessToken, const std::wstring& activationKey)
+{
+    EnsureDeviceInfo();
+    std::string body = "{\"activationKey\":\"" + JsonEscape(WideToUtf8(activationKey)) +
+        "\",\"deviceMac\":\"" + JsonEscape(WideToUtf8(g_deviceMac)) +
+        "\",\"deviceName\":\"" + JsonEscape(WideToUtf8(g_deviceName)) + "\"}";
+
+    LogMessage(L"ActivateLicense: key=" + activationKey + L" mac=" + g_deviceMac + L" name=" + g_deviceName);
+    LogMessage(L"ActivateLicense body: " + Utf8ToWide(body));
+
+    HttpResponse response;
+    if (!SendHttpsRequest(L"POST", L"/api/licenses/activate", body, accessToken, response) || response.status != 200)
+    {
+        LogMessage(L"ActivateLicense failed: status=" + std::to_wstring(response.status));
+        if (!response.body.empty())
+        {
+            LogMessage(L"ActivateLicense response: " + Utf8ToWide(response.body));
+        }
+        return false;
+    }
+
+    if (!UpdateLicenseStateFromResponse(response.body, activationKey))
+    {
+        LogMessage(L"ActivateLicense: cannot parse response, trying check");
+        return CheckLicense(accessToken);
+    }
+
+    LogMessage(L"ActivateLicense success");
+    return true;
+}
+
+bool RenewLicense(const std::wstring& accessToken, const std::wstring& activationKey)
+{
+    if (activationKey.empty())
+    {
+        return false;
+    }
+
+    std::string body = "{\"activationKey\":\"" + JsonEscape(WideToUtf8(activationKey)) + "\"}";
+    HttpResponse response;
+    if (!SendHttpsRequest(L"POST", L"/api/licenses/renew", body, accessToken, response) || response.status != 200)
+    {
+        return false;
+    }
+
+    return UpdateLicenseStateFromResponse(response.body, activationKey);
+}
+
+bool LoginUser(const std::wstring& username, const std::wstring& password)
+{
+    std::string body = "{\"username\":\"" + JsonEscape(WideToUtf8(username)) + "\",\"password\":\"" + JsonEscape(WideToUtf8(password)) + "\"}";
+    HttpResponse response;
+    if (!SendHttpsRequest(L"POST", L"/api/auth/login", body, L"", response) || response.status != 200)
+    {
+        LogMessage(L"LoginUser failed for username=" + username + L" status=" + std::to_wstring(response.status));
+        if (!response.body.empty())
+        {
+            LogMessage(L"Login response body: " + Utf8ToWide(response.body));
+        }
+        return false;
+    }
+
+    if (!UpdateAuthStateFromResponse(response.body, username))
+    {
+        LogMessage(L"LoginUser failed: cannot parse tokens from response");
+        if (!response.body.empty())
+        {
+            LogMessage(L"Login parse body: " + Utf8ToWide(response.body));
+        }
+        return false;
+    }
+    UpdateDeviceIdentityForUser(username);
+    LogMessage(L"LoginUser success for username=" + username);
+
+    EnterCriticalSection(&g_lock);
+    ClearLicenseState();
+    LeaveCriticalSection(&g_lock);
+
+    EnterCriticalSection(&g_lock);
+    std::wstring accessToken = g_authState.accessToken;
+    LeaveCriticalSection(&g_lock);
+
+    if (!accessToken.empty())
+    {
+        CheckLicense(accessToken);
+    }
+
+    return true;
+}
+
+bool RefreshTokens()
+{
+    std::wstring refreshToken;
+    EnterCriticalSection(&g_lock);
+    refreshToken = g_authState.refreshToken;
+    LeaveCriticalSection(&g_lock);
+
+    if (refreshToken.empty())
+    {
+        return false;
+    }
+
+    std::string body = "{\"refreshToken\":\"" + JsonEscape(WideToUtf8(refreshToken)) + "\"}";
+    HttpResponse response;
+    if (!SendHttpsRequest(L"POST", L"/api/auth/refresh", body, L"", response) || response.status != 200)
+    {
+        return false;
+    }
+
+    EnterCriticalSection(&g_lock);
+    std::wstring username = g_authState.username;
+    LeaveCriticalSection(&g_lock);
+
+    return UpdateAuthStateFromResponse(response.body, username);
+}
+
+void LogoutUser()
+{
+    EnterCriticalSection(&g_lock);
+    ClearAuthState();
+    ClearLicenseState();
+    LeaveCriticalSection(&g_lock);
+    UpdateDeviceIdentityForUser(L"");
+}
+
+DWORD ComputeNextWakeMs()
+{
+    ULONGLONG now = GetNowFileTime();
+    ULONGLONG next = now + 30ULL * 10000000ULL;
+    const ULONGLONG skew = 60ULL * 10000000ULL;
+
+    EnterCriticalSection(&g_lock);
+    if (g_authState.isAuthenticated)
+    {
+        if (g_authState.accessExpires > skew)
+        {
+            ULONGLONG candidate = g_authState.accessExpires - skew;
+            if (candidate < next)
+            {
+                next = candidate;
+            }
+        }
+        if (g_authState.refreshExpires > skew)
+        {
+            ULONGLONG candidate = g_authState.refreshExpires - skew;
+            if (candidate < next)
+            {
+                next = candidate;
+            }
+        }
+    }
+    if (g_licenseState.hasTicket)
+    {
+        if (g_licenseState.nextRefresh < next)
+        {
+            next = g_licenseState.nextRefresh;
+        }
+    }
+    LeaveCriticalSection(&g_lock);
+
+    if (next <= now)
+    {
+        return 0;
+    }
+
+    ULONGLONG diff = next - now;
+    ULONGLONG ms = diff / 10000ULL;
+    if (ms > 300000)
+    {
+        ms = 300000;
+    }
+    return static_cast<DWORD>(ms);
+}
+
+DWORD WINAPI BackgroundWorkerThread(LPVOID)
+{
+    HANDLE handles[2] = { g_workerStopEvent, g_workerWakeEvent };
+
+    while (true)
+    {
+        DWORD timeout = ComputeNextWakeMs();
+        DWORD waitResult = WaitForMultipleObjects(2, handles, FALSE, timeout);
+        if (waitResult == WAIT_OBJECT_0)
+        {
+            break;
+        }
+
+        if (waitResult == WAIT_OBJECT_0 + 1)
+        {
+            ResetEvent(g_workerWakeEvent);
+        }
+
+        std::wstring accessToken;
+        std::wstring activationKey;
+        ULONGLONG accessExpires = 0;
+        ULONGLONG refreshExpires = 0;
+        ULONGLONG nextRefresh = 0;
+        bool authenticated = false;
+        bool hasTicket = false;
+
+        EnterCriticalSection(&g_lock);
+        authenticated = g_authState.isAuthenticated;
+        accessToken = g_authState.accessToken;
+        accessExpires = g_authState.accessExpires;
+        refreshExpires = g_authState.refreshExpires;
+        activationKey = g_licenseState.activationKey;
+        nextRefresh = g_licenseState.nextRefresh;
+        hasTicket = g_licenseState.hasTicket;
+        LeaveCriticalSection(&g_lock);
+
+        if (!authenticated)
+        {
+            continue;
+        }
+
+        ULONGLONG now = GetNowFileTime();
+        const ULONGLONG skew = 60ULL * 10000000ULL;
+
+        if (accessExpires <= now + skew || refreshExpires <= now + skew)
+        {
+            if (!RefreshTokens())
+            {
+                LogoutUser();
+                continue;
+            }
+        }
+
+        if (hasTicket && nextRefresh <= now + skew)
+        {
+            if (!RenewLicense(accessToken, activationKey))
+            {
+                EnterCriticalSection(&g_lock);
+                ClearLicenseState();
+                LeaveCriticalSection(&g_lock);
+            }
+        }
+    }
+
+    return 0;
 }
 
 bool IsRunning(HANDLE process)
@@ -311,7 +1409,36 @@ bool StartAppInSession(DWORD sessionId)
         return false;
     }
 
-    LogMessage(L"Started tray app for session " + std::to_wstring(sessionId) + L" pid=" + std::to_wstring(pi.dwProcessId));
+    DWORD actualSession = 0;
+    if (ProcessIdToSessionId(pi.dwProcessId, &actualSession))
+    {
+        LogMessage(L"Started TrayApp for session " + std::to_wstring(sessionId) +
+            L" pid=" + std::to_wstring(pi.dwProcessId) +
+            L" actualSession=" + std::to_wstring(actualSession));
+    }
+    else
+    {
+        LogWin32Error(L"ProcessIdToSessionId failed for pid " + std::to_wstring(pi.dwProcessId));
+        LogMessage(L"Started TrayApp for session " + std::to_wstring(sessionId) + L" pid=" + std::to_wstring(pi.dwProcessId));
+    }
+
+    DWORD waitResult = WaitForSingleObject(pi.hProcess, 2000);
+    if (waitResult == WAIT_OBJECT_0)
+    {
+        DWORD exitCode = 0;
+        if (GetExitCodeProcess(pi.hProcess, &exitCode))
+        {
+            LogMessage(L"TrayApp exited quickly. pid=" + std::to_wstring(pi.dwProcessId) + L" exitCode=" + std::to_wstring(exitCode));
+        }
+        else
+        {
+            LogWin32Error(L"GetExitCodeProcess failed for pid " + std::to_wstring(pi.dwProcessId));
+        }
+    }
+    else if (waitResult == WAIT_FAILED)
+    {
+        LogWin32Error(L"WaitForSingleObject failed for pid " + std::to_wstring(pi.dwProcessId));
+    }
 
     CloseHandle(pi.hThread);
 
@@ -342,6 +1469,9 @@ void StartAppsInCurrentSessions()
         {
             continue;
         }
+
+        std::wstring stationName = sessions[i].pWinStationName ? sessions[i].pWinStationName : L"";
+        LogMessage(L"Session id=" + std::to_wstring(id) + L" state=" + std::to_wstring(static_cast<int>(sessions[i].State)) + L" station=" + stationName);
 
         StartAppInSession(id);
     }
@@ -407,7 +1537,7 @@ bool StartRpc()
         nullptr,
         RPC_IF_ALLOW_LOCAL_ONLY,
         RPC_C_LISTEN_MAX_CALLS_DEFAULT,
-        static_cast<unsigned>(-1),
+        (unsigned)-1,
         nullptr);
 
     return s == RPC_S_OK;
@@ -421,7 +1551,7 @@ bool ConfirmStopFromActiveSession()
         return true;
     }
 
-    std::wstring title = kServiceDisplayName;
+    std::wstring title = L"Rbpo PZ Service";
     std::wstring message = L"Остановить службу?";
     DWORD response = 0;
 
@@ -458,13 +1588,142 @@ void RpcRequestStop(handle_t)
     RpcMgmtStopServerListening(nullptr);
 }
 
-DWORD WINAPI ServiceHandler(DWORD control, DWORD eventType, LPVOID eventData, LPVOID)
+long RpcGetUserInfo(handle_t, long* isAuthenticated, wchar_t** username)
 {
-    if (control == SERVICE_CONTROL_STOP || control == SERVICE_CONTROL_SHUTDOWN)
+    if (!isAuthenticated || !username)
     {
-        return ERROR_CALL_NOT_IMPLEMENTED;
+        return ERROR_INVALID_PARAMETER;
     }
 
+    std::wstring name;
+    bool authenticated = false;
+
+    EnterCriticalSection(&g_lock);
+    authenticated = g_authState.isAuthenticated;
+    name = g_authState.username;
+    LeaveCriticalSection(&g_lock);
+
+    *isAuthenticated = authenticated ? 1 : 0;
+    size_t len = name.size();
+    *username = reinterpret_cast<wchar_t*>(MIDL_user_allocate((len + 1) * sizeof(wchar_t)));
+    if (!*username)
+    {
+        return ERROR_OUTOFMEMORY;
+    }
+
+    if (len > 0)
+    {
+        wcscpy_s(*username, len + 1, name.c_str());
+    }
+    else
+    {
+        (*username)[0] = L'\0';
+    }
+
+    return ERROR_SUCCESS;
+}
+
+long RpcLogin(handle_t, const wchar_t* username, const wchar_t* password)
+{
+    if (!username || !password || wcslen(username) == 0)
+    {
+        return ERROR_INVALID_PARAMETER;
+    }
+
+    if (!LoginUser(username, password))
+    {
+        return ERROR_ACCESS_DENIED;
+    }
+
+    if (g_workerWakeEvent)
+    {
+        SetEvent(g_workerWakeEvent);
+    }
+
+    return ERROR_SUCCESS;
+}
+
+long RpcLogout(handle_t)
+{
+    LogoutUser();
+    if (g_workerWakeEvent)
+    {
+        SetEvent(g_workerWakeEvent);
+    }
+    return ERROR_SUCCESS;
+}
+
+long RpcGetLicenseInfo(handle_t, long* hasLicense, long* blocked, wchar_t** expirationDate)
+{
+    if (!hasLicense || !blocked || !expirationDate)
+    {
+        return ERROR_INVALID_PARAMETER;
+    }
+
+    bool hasTicket = false;
+    bool isBlocked = false;
+    std::wstring expiration;
+
+    EnterCriticalSection(&g_lock);
+    hasTicket = g_licenseState.hasTicket;
+    isBlocked = g_licenseState.blocked;
+    expiration = g_licenseState.expirationDate;
+    LeaveCriticalSection(&g_lock);
+
+    *hasLicense = hasTicket ? 1 : 0;
+    *blocked = isBlocked ? 1 : 0;
+
+    size_t len = expiration.size();
+    *expirationDate = reinterpret_cast<wchar_t*>(MIDL_user_allocate((len + 1) * sizeof(wchar_t)));
+    if (!*expirationDate)
+    {
+        return ERROR_OUTOFMEMORY;
+    }
+
+    if (len > 0)
+    {
+        wcscpy_s(*expirationDate, len + 1, expiration.c_str());
+    }
+    else
+    {
+        (*expirationDate)[0] = L'\0';
+    }
+
+    return hasTicket ? ERROR_SUCCESS : ERROR_NOT_FOUND;
+}
+
+long RpcActivate(handle_t, const wchar_t* activationKey)
+{
+    if (!activationKey || wcslen(activationKey) == 0)
+    {
+        return ERROR_INVALID_PARAMETER;
+    }
+
+    std::wstring accessToken;
+    EnterCriticalSection(&g_lock);
+    accessToken = g_authState.accessToken;
+    LeaveCriticalSection(&g_lock);
+
+    if (accessToken.empty())
+    {
+        return ERROR_ACCESS_DENIED;
+    }
+
+    if (!ActivateLicense(accessToken, activationKey))
+    {
+        return ERROR_INVALID_DATA;
+    }
+
+    if (g_workerWakeEvent)
+    {
+        SetEvent(g_workerWakeEvent);
+    }
+
+    return ERROR_SUCCESS;
+}
+
+DWORD WINAPI ServiceHandler(DWORD control, DWORD eventType, LPVOID eventData, LPVOID)
+{
     if (control == SERVICE_CONTROL_SESSIONCHANGE && eventType == WTS_SESSION_LOGON)
     {
         auto* data = reinterpret_cast<WTSSESSION_NOTIFICATION*>(eventData);
@@ -504,6 +1763,19 @@ void WINAPI ServiceMain(DWORD, LPWSTR*)
         return;
     }
 
+    g_workerStopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    g_workerWakeEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (!g_workerStopEvent || !g_workerWakeEvent)
+    {
+        LogWin32Error(L"CreateEvent failed");
+    }
+
+    g_workerThread = CreateThread(nullptr, 0, BackgroundWorkerThread, nullptr, 0, nullptr);
+    if (!g_workerThread)
+    {
+        LogWin32Error(L"CreateThread failed");
+    }
+
     StartAppsInCurrentSessions();
     SetState(SERVICE_RUNNING, SERVICE_ACCEPT_SESSIONCHANGE);
 
@@ -512,6 +1784,26 @@ void WINAPI ServiceMain(DWORD, LPWSTR*)
     LogMessage(L"ServiceMain: stopping");
 
     RpcServerUnregisterIf(ServiceControl_v1_0_s_ifspec, nullptr, FALSE);
+    if (g_workerStopEvent)
+    {
+        SetEvent(g_workerStopEvent);
+    }
+    if (g_workerThread)
+    {
+        WaitForSingleObject(g_workerThread, 5000);
+        CloseHandle(g_workerThread);
+        g_workerThread = nullptr;
+    }
+    if (g_workerWakeEvent)
+    {
+        CloseHandle(g_workerWakeEvent);
+        g_workerWakeEvent = nullptr;
+    }
+    if (g_workerStopEvent)
+    {
+        CloseHandle(g_workerStopEvent);
+        g_workerStopEvent = nullptr;
+    }
     StopAllApps();
     SetState(SERVICE_STOPPED, 0);
 

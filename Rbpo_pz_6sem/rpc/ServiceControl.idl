@@ -6,4 +6,9 @@
 interface ServiceControl
 {
     void RpcRequestStop([in] handle_t hBinding);
+    long RpcGetUserInfo([in] handle_t hBinding, [out] long* isAuthenticated, [out, string] wchar_t** username);
+    long RpcLogin([in] handle_t hBinding, [in, string] const wchar_t* username, [in, string] const wchar_t* password);
+    long RpcLogout([in] handle_t hBinding);
+    long RpcGetLicenseInfo([in] handle_t hBinding, [out] long* hasLicense, [out] long* blocked, [out, string] wchar_t** expirationDate);
+    long RpcActivate([in] handle_t hBinding, [in, string] const wchar_t* activationKey);
 }

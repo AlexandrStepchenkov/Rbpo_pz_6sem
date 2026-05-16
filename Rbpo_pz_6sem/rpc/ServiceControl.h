@@ -63,6 +63,29 @@ extern "C"{
 void RpcRequestStop( 
     /* [in] */ handle_t hBinding);
 
+long RpcGetUserInfo( 
+    /* [in] */ handle_t hBinding,
+    /* [out] */ long *isAuthenticated,
+    /* [string][out] */ wchar_t **username);
+
+long RpcLogin( 
+    /* [in] */ handle_t hBinding,
+    /* [string][in] */ const wchar_t *username,
+    /* [string][in] */ const wchar_t *password);
+
+long RpcLogout( 
+    /* [in] */ handle_t hBinding);
+
+long RpcGetLicenseInfo( 
+    /* [in] */ handle_t hBinding,
+    /* [out] */ long *hasLicense,
+    /* [out] */ long *blocked,
+    /* [string][out] */ wchar_t **expirationDate);
+
+long RpcActivate( 
+    /* [in] */ handle_t hBinding,
+    /* [string][in] */ const wchar_t *activationKey);
+
 
 
 extern RPC_IF_HANDLE ServiceControl_v1_0_c_ifspec;

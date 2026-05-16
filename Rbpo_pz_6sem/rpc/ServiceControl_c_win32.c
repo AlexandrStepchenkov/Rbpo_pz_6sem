@@ -35,8 +35,8 @@
 
 #include "ServiceControl.h"
 
-#define TYPE_FORMAT_STRING_SIZE   3                                 
-#define PROC_FORMAT_STRING_SIZE   29                                
+#define TYPE_FORMAT_STRING_SIZE   19                                
+#define PROC_FORMAT_STRING_SIZE   247                               
 #define EXPR_FORMAT_STRING_SIZE   1                                 
 #define TRANSMIT_AS_TABLE_SIZE    0            
 #define WIRE_MARSHAL_TABLE_SIZE   0            
@@ -167,6 +167,89 @@ void RpcRequestStop(
 }
 
 
+long RpcGetUserInfo( 
+    /* [in] */ handle_t hBinding,
+    /* [out] */ long *isAuthenticated,
+    /* [string][out] */ wchar_t **username)
+{
+
+    CLIENT_CALL_RETURN _RetVal;
+
+    _RetVal = NdrClientCall2(
+                  ( PMIDL_STUB_DESC  )&ServiceControl_StubDesc,
+                  (PFORMAT_STRING) &ServiceControl__MIDL_ProcFormatString.Format[28],
+                  ( unsigned char * )&hBinding);
+    return ( long  )_RetVal.Simple;
+    
+}
+
+
+long RpcLogin( 
+    /* [in] */ handle_t hBinding,
+    /* [string][in] */ const wchar_t *username,
+    /* [string][in] */ const wchar_t *password)
+{
+
+    CLIENT_CALL_RETURN _RetVal;
+
+    _RetVal = NdrClientCall2(
+                  ( PMIDL_STUB_DESC  )&ServiceControl_StubDesc,
+                  (PFORMAT_STRING) &ServiceControl__MIDL_ProcFormatString.Format[74],
+                  ( unsigned char * )&hBinding);
+    return ( long  )_RetVal.Simple;
+    
+}
+
+
+long RpcLogout( 
+    /* [in] */ handle_t hBinding)
+{
+
+    CLIENT_CALL_RETURN _RetVal;
+
+    _RetVal = NdrClientCall2(
+                  ( PMIDL_STUB_DESC  )&ServiceControl_StubDesc,
+                  (PFORMAT_STRING) &ServiceControl__MIDL_ProcFormatString.Format[120],
+                  ( unsigned char * )&hBinding);
+    return ( long  )_RetVal.Simple;
+    
+}
+
+
+long RpcGetLicenseInfo( 
+    /* [in] */ handle_t hBinding,
+    /* [out] */ long *hasLicense,
+    /* [out] */ long *blocked,
+    /* [string][out] */ wchar_t **expirationDate)
+{
+
+    CLIENT_CALL_RETURN _RetVal;
+
+    _RetVal = NdrClientCall2(
+                  ( PMIDL_STUB_DESC  )&ServiceControl_StubDesc,
+                  (PFORMAT_STRING) &ServiceControl__MIDL_ProcFormatString.Format[154],
+                  ( unsigned char * )&hBinding);
+    return ( long  )_RetVal.Simple;
+    
+}
+
+
+long RpcActivate( 
+    /* [in] */ handle_t hBinding,
+    /* [string][in] */ const wchar_t *activationKey)
+{
+
+    CLIENT_CALL_RETURN _RetVal;
+
+    _RetVal = NdrClientCall2(
+                  ( PMIDL_STUB_DESC  )&ServiceControl_StubDesc,
+                  (PFORMAT_STRING) &ServiceControl__MIDL_ProcFormatString.Format[206],
+                  ( unsigned char * )&hBinding);
+    return ( long  )_RetVal.Simple;
+    
+}
+
+
 #if !defined(__RPC_WIN32__)
 #error  Invalid build platform for this stub.
 #endif
@@ -204,6 +287,192 @@ static const ServiceControl_MIDL_PROC_FORMAT_STRING ServiceControl__MIDL_ProcFor
 /* 24 */	NdrFcShort( 0x0 ),	/* 0 */
 /* 26 */	NdrFcShort( 0x0 ),	/* 0 */
 
+	/* Procedure RpcGetUserInfo */
+
+/* 28 */	0x0,		/* 0 */
+			0x48,		/* Old Flags:  */
+/* 30 */	NdrFcLong( 0x0 ),	/* 0 */
+/* 34 */	NdrFcShort( 0x1 ),	/* 1 */
+/* 36 */	NdrFcShort( 0x10 ),	/* x86 Stack size/offset = 16 */
+/* 38 */	0x32,		/* FC_BIND_PRIMITIVE */
+			0x0,		/* 0 */
+/* 40 */	NdrFcShort( 0x0 ),	/* x86 Stack size/offset = 0 */
+/* 42 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 44 */	NdrFcShort( 0x24 ),	/* 36 */
+/* 46 */	0x45,		/* Oi2 Flags:  srv must size, has return, has ext, */
+			0x3,		/* 3 */
+/* 48 */	0x8,		/* 8 */
+			0x1,		/* Ext Flags:  new corr desc, */
+/* 50 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 52 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 54 */	NdrFcShort( 0x0 ),	/* 0 */
+
+	/* Parameter isAuthenticated */
+
+/* 56 */	NdrFcShort( 0x2150 ),	/* Flags:  out, base type, simple ref, srv alloc size=8 */
+/* 58 */	NdrFcShort( 0x4 ),	/* x86 Stack size/offset = 4 */
+/* 60 */	0x8,		/* FC_LONG */
+			0x0,		/* 0 */
+
+	/* Parameter username */
+
+/* 62 */	NdrFcShort( 0x2013 ),	/* Flags:  must size, must free, out, srv alloc size=8 */
+/* 64 */	NdrFcShort( 0x8 ),	/* x86 Stack size/offset = 8 */
+/* 66 */	NdrFcShort( 0x6 ),	/* Type Offset=6 */
+
+	/* Return value */
+
+/* 68 */	NdrFcShort( 0x70 ),	/* Flags:  out, return, base type, */
+/* 70 */	NdrFcShort( 0xc ),	/* x86 Stack size/offset = 12 */
+/* 72 */	0x8,		/* FC_LONG */
+			0x0,		/* 0 */
+
+	/* Procedure RpcLogin */
+
+/* 74 */	0x0,		/* 0 */
+			0x48,		/* Old Flags:  */
+/* 76 */	NdrFcLong( 0x0 ),	/* 0 */
+/* 80 */	NdrFcShort( 0x2 ),	/* 2 */
+/* 82 */	NdrFcShort( 0x10 ),	/* x86 Stack size/offset = 16 */
+/* 84 */	0x32,		/* FC_BIND_PRIMITIVE */
+			0x0,		/* 0 */
+/* 86 */	NdrFcShort( 0x0 ),	/* x86 Stack size/offset = 0 */
+/* 88 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 90 */	NdrFcShort( 0x8 ),	/* 8 */
+/* 92 */	0x46,		/* Oi2 Flags:  clt must size, has return, has ext, */
+			0x3,		/* 3 */
+/* 94 */	0x8,		/* 8 */
+			0x1,		/* Ext Flags:  new corr desc, */
+/* 96 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 98 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 100 */	NdrFcShort( 0x0 ),	/* 0 */
+
+	/* Parameter username */
+
+/* 102 */	NdrFcShort( 0x10b ),	/* Flags:  must size, must free, in, simple ref, */
+/* 104 */	NdrFcShort( 0x4 ),	/* x86 Stack size/offset = 4 */
+/* 106 */	NdrFcShort( 0x10 ),	/* Type Offset=16 */
+
+	/* Parameter password */
+
+/* 108 */	NdrFcShort( 0x10b ),	/* Flags:  must size, must free, in, simple ref, */
+/* 110 */	NdrFcShort( 0x8 ),	/* x86 Stack size/offset = 8 */
+/* 112 */	NdrFcShort( 0x10 ),	/* Type Offset=16 */
+
+	/* Return value */
+
+/* 114 */	NdrFcShort( 0x70 ),	/* Flags:  out, return, base type, */
+/* 116 */	NdrFcShort( 0xc ),	/* x86 Stack size/offset = 12 */
+/* 118 */	0x8,		/* FC_LONG */
+			0x0,		/* 0 */
+
+	/* Procedure RpcLogout */
+
+/* 120 */	0x0,		/* 0 */
+			0x48,		/* Old Flags:  */
+/* 122 */	NdrFcLong( 0x0 ),	/* 0 */
+/* 126 */	NdrFcShort( 0x3 ),	/* 3 */
+/* 128 */	NdrFcShort( 0x8 ),	/* x86 Stack size/offset = 8 */
+/* 130 */	0x32,		/* FC_BIND_PRIMITIVE */
+			0x0,		/* 0 */
+/* 132 */	NdrFcShort( 0x0 ),	/* x86 Stack size/offset = 0 */
+/* 134 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 136 */	NdrFcShort( 0x8 ),	/* 8 */
+/* 138 */	0x44,		/* Oi2 Flags:  has return, has ext, */
+			0x1,		/* 1 */
+/* 140 */	0x8,		/* 8 */
+			0x1,		/* Ext Flags:  new corr desc, */
+/* 142 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 144 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 146 */	NdrFcShort( 0x0 ),	/* 0 */
+
+	/* Return value */
+
+/* 148 */	NdrFcShort( 0x70 ),	/* Flags:  out, return, base type, */
+/* 150 */	NdrFcShort( 0x4 ),	/* x86 Stack size/offset = 4 */
+/* 152 */	0x8,		/* FC_LONG */
+			0x0,		/* 0 */
+
+	/* Procedure RpcGetLicenseInfo */
+
+/* 154 */	0x0,		/* 0 */
+			0x48,		/* Old Flags:  */
+/* 156 */	NdrFcLong( 0x0 ),	/* 0 */
+/* 160 */	NdrFcShort( 0x4 ),	/* 4 */
+/* 162 */	NdrFcShort( 0x14 ),	/* x86 Stack size/offset = 20 */
+/* 164 */	0x32,		/* FC_BIND_PRIMITIVE */
+			0x0,		/* 0 */
+/* 166 */	NdrFcShort( 0x0 ),	/* x86 Stack size/offset = 0 */
+/* 168 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 170 */	NdrFcShort( 0x40 ),	/* 64 */
+/* 172 */	0x45,		/* Oi2 Flags:  srv must size, has return, has ext, */
+			0x4,		/* 4 */
+/* 174 */	0x8,		/* 8 */
+			0x1,		/* Ext Flags:  new corr desc, */
+/* 176 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 178 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 180 */	NdrFcShort( 0x0 ),	/* 0 */
+
+	/* Parameter hasLicense */
+
+/* 182 */	NdrFcShort( 0x2150 ),	/* Flags:  out, base type, simple ref, srv alloc size=8 */
+/* 184 */	NdrFcShort( 0x4 ),	/* x86 Stack size/offset = 4 */
+/* 186 */	0x8,		/* FC_LONG */
+			0x0,		/* 0 */
+
+	/* Parameter blocked */
+
+/* 188 */	NdrFcShort( 0x2150 ),	/* Flags:  out, base type, simple ref, srv alloc size=8 */
+/* 190 */	NdrFcShort( 0x8 ),	/* x86 Stack size/offset = 8 */
+/* 192 */	0x8,		/* FC_LONG */
+			0x0,		/* 0 */
+
+	/* Parameter expirationDate */
+
+/* 194 */	NdrFcShort( 0x2013 ),	/* Flags:  must size, must free, out, srv alloc size=8 */
+/* 196 */	NdrFcShort( 0xc ),	/* x86 Stack size/offset = 12 */
+/* 198 */	NdrFcShort( 0x6 ),	/* Type Offset=6 */
+
+	/* Return value */
+
+/* 200 */	NdrFcShort( 0x70 ),	/* Flags:  out, return, base type, */
+/* 202 */	NdrFcShort( 0x10 ),	/* x86 Stack size/offset = 16 */
+/* 204 */	0x8,		/* FC_LONG */
+			0x0,		/* 0 */
+
+	/* Procedure RpcActivate */
+
+/* 206 */	0x0,		/* 0 */
+			0x48,		/* Old Flags:  */
+/* 208 */	NdrFcLong( 0x0 ),	/* 0 */
+/* 212 */	NdrFcShort( 0x5 ),	/* 5 */
+/* 214 */	NdrFcShort( 0xc ),	/* x86 Stack size/offset = 12 */
+/* 216 */	0x32,		/* FC_BIND_PRIMITIVE */
+			0x0,		/* 0 */
+/* 218 */	NdrFcShort( 0x0 ),	/* x86 Stack size/offset = 0 */
+/* 220 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 222 */	NdrFcShort( 0x8 ),	/* 8 */
+/* 224 */	0x46,		/* Oi2 Flags:  clt must size, has return, has ext, */
+			0x2,		/* 2 */
+/* 226 */	0x8,		/* 8 */
+			0x1,		/* Ext Flags:  new corr desc, */
+/* 228 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 230 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 232 */	NdrFcShort( 0x0 ),	/* 0 */
+
+	/* Parameter activationKey */
+
+/* 234 */	NdrFcShort( 0x10b ),	/* Flags:  must size, must free, in, simple ref, */
+/* 236 */	NdrFcShort( 0x4 ),	/* x86 Stack size/offset = 4 */
+/* 238 */	NdrFcShort( 0x10 ),	/* Type Offset=16 */
+
+	/* Return value */
+
+/* 240 */	NdrFcShort( 0x70 ),	/* Flags:  out, return, base type, */
+/* 242 */	NdrFcShort( 0x8 ),	/* x86 Stack size/offset = 8 */
+/* 244 */	0x8,		/* FC_LONG */
+			0x0,		/* 0 */
+
 			0x0
         }
     };
@@ -213,6 +482,23 @@ static const ServiceControl_MIDL_TYPE_FORMAT_STRING ServiceControl__MIDL_TypeFor
         0,
         {
 			NdrFcShort( 0x0 ),	/* 0 */
+/*  2 */	
+			0x11, 0xc,	/* FC_RP [alloced_on_stack] [simple_pointer] */
+/*  4 */	0x8,		/* FC_LONG */
+			0x5c,		/* FC_PAD */
+/*  6 */	
+			0x11, 0x14,	/* FC_RP [alloced_on_stack] [pointer_deref] */
+/*  8 */	NdrFcShort( 0x2 ),	/* Offset= 2 (10) */
+/* 10 */	
+			0x12, 0x8,	/* FC_UP [simple_pointer] */
+/* 12 */	
+			0x25,		/* FC_C_WSTRING */
+			0x5c,		/* FC_PAD */
+/* 14 */	
+			0x11, 0x8,	/* FC_RP [simple_pointer] */
+/* 16 */	
+			0x25,		/* FC_C_WSTRING */
+			0x5c,		/* FC_PAD */
 
 			0x0
         }
@@ -220,7 +506,12 @@ static const ServiceControl_MIDL_TYPE_FORMAT_STRING ServiceControl__MIDL_TypeFor
 
 static const unsigned short ServiceControl_FormatStringOffsetTable[] =
     {
-    0
+    0,
+    28,
+    74,
+    120,
+    154,
+    206
     };
 
 

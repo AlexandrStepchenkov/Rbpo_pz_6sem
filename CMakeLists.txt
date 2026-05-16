@@ -34,6 +34,8 @@ target_compile_options(Rbpo_pz_6sem PRIVATE
     /Wall
     /WX-
     /Oy-
+    /wd4710
+    /wd4711
 )
 
 target_link_libraries(Rbpo_pz_6sem PRIVATE
@@ -61,6 +63,8 @@ target_compile_options(RbpoPz6SemService PRIVATE
     /Wall
     /WX-
     /Oy-
+    /wd4710
+    /wd4711
 )
 
 target_link_libraries(RbpoPz6SemService PRIVATE
@@ -68,4 +72,7 @@ target_link_libraries(RbpoPz6SemService PRIVATE
     wtsapi32
     userenv
     advapi32
+    winhttp
+    iphlpapi
+    crypt32
 )
