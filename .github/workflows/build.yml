@@ -57,7 +57,7 @@ jobs:
           function Resolve-Tool($name) {
             $cmd = Get-Command $name -ErrorAction SilentlyContinue
             if ($cmd) { return $cmd.Path }
-            $paths = @($env:ProgramFiles, $env:ProgramFiles(x86))
+            $paths = @(${env:ProgramFiles}, ${env:ProgramFiles(x86)})
             foreach ($p in $paths) {
               if (-not $p) { continue }
               $found = Get-ChildItem -Path $p -Filter $name -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -83,7 +83,7 @@ jobs:
           function Resolve-Tool($name) {
             $cmd = Get-Command $name -ErrorAction SilentlyContinue
             if ($cmd) { return $cmd.Path }
-            $paths = @($env:ProgramFiles, $env:ProgramFiles(x86))
+            $paths = @(${env:ProgramFiles}, ${env:ProgramFiles(x86)})
             foreach ($p in $paths) {
               if (-not $p) { continue }
               $found = Get-ChildItem -Path $p -Filter $name -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
