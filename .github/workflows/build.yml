@@ -74,8 +74,9 @@ jobs:
           if (-not $light) { Write-Error 'light.exe not found. Ensure WiX Toolset is installed.'; exit 1 }
 
           & $heat dir artifact -cg AppFiles -dr INSTALLFOLDER -scom -sreg -sfrag -gg -out tools\installer\harvested.wxs
-          & $candle tools\installer\product.wxs tools\installer\harvested.wxs -outdir tools\installer
-          & $light tools\installer\product.wixobj tools\installer\harvested.wixobj -ext WixUtilExtension -out tools\installer\RbpoPzInstaller.msi
+          & $candle -out tools\installer\product.wixobj tools\installer\product.wxs
+          & $candle -out tools\installer\harvested.wixobj tools\installer\harvested.wxs
+          & $light -ext WixUtilExtension -out tools\installer\RbpoPzInstaller.msi tools\installer\product.wixobj tools\installer\harvested.wixobj
 
       - name: Build Bundle
         shell: pwsh
@@ -97,8 +98,8 @@ jobs:
           if (-not $candle) { Write-Error 'candle.exe not found. Ensure WiX Toolset is installed.'; exit 1 }
           if (-not $light) { Write-Error 'light.exe not found. Ensure WiX Toolset is installed.'; exit 1 }
 
-          & $candle tools\installer\bundle.wxs -outdir tools\installer
-          & $light tools\installer\bundle.wixobj -ext WixBalExtension -out tools\installer\RbpoPzInstaller.exe
+          & $candle -out tools\installer\bundle.wixobj tools\installer\bundle.wxs
+          & $light -ext WixBalExtension -out tools\installer\RbpoPzInstaller.exe tools\installer\bundle.wixobj
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
