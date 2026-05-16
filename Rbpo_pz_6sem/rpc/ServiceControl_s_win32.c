@@ -35,7 +35,7 @@
 #include "ServiceControl.h"
 
 #define TYPE_FORMAT_STRING_SIZE   19                                
-#define PROC_FORMAT_STRING_SIZE   247                               
+#define PROC_FORMAT_STRING_SIZE   360                               
 #define EXPR_FORMAT_STRING_SIZE   1                                 
 #define TRANSMIT_AS_TABLE_SIZE    0            
 #define WIRE_MARSHAL_TABLE_SIZE   0            

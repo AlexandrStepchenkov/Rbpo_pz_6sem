@@ -79,6 +79,7 @@ av::AvDatabase g_avDatabase{};
 bool g_avDatabaseLoaded = false;
 
 std::wstring GetSelfDirectory();
+void LogMessage(const std::wstring& message);
 
 void LoadAvDatabase()
 {
