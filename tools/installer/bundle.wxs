@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi" 
+     xmlns:bal="http://schemas.microsoft.com/wix/BalExtension">
+  <Bundle Name="RbpoPz6 Installer" Version="1.0.0.0" Manufacturer="Rbpo" UpgradeCode="{E3B4C2D1-5A6B-4C3D-8E9F-0A1B2C3D4E5F}">
+    <BootstrapperApplicationRef Id="WixStandardBootstrapperApplication.HyperlinkLicense">
+      <bal:WixStandardBootstrapperApplication LicenseUrl=""/> 
+    </BootstrapperApplicationRef>
+
+    <Chain>
+      <!-- Visual C++ Redistributable (downloaded in CI and included in repo installer build) -->
+      <ExePackage Id="VCRedist_x64" SourceFile="prereqs\VC_redist.x64.exe" DisplayName="Microsoft Visual C++ 2015-2022 Redistributable (x64)" InstallCommand="/install /quiet /norestart" DetectCondition="(Exists('[\"HKLM\\SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\"]') )"/>
+
+      <!-- Main MSI produced by product.wxs -->
+      <MsiPackage Id="RbpoPz6Msi" SourceFile="RbpoPzInstaller.msi" DisplayName="RbpoPz6"/>
+    </Chain>
+  </Bundle>
+</Wix>

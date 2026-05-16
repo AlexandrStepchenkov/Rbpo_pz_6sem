@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
+  <Product Id="*" Name="RbpoPz6" Language="1049" Version="1.0.0.0" Manufacturer="Rbpo" UpgradeCode="{D2A3A9B3-8F6A-4F6A-9A6A-7F3B2E1C3D4E}">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"/>
+
+    <MediaTemplate/>
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFilesFolder">
+        <Directory Id="INSTALLFOLDER" Name="RbpoPz6"/>
+      </Directory>
+    </Directory>
+
+    <!-- Harvested files will create a component group named AppFiles -->
+    <Feature Id="ProductFeature" Title="RbpoPz6" Level="1">
+      <ComponentGroupRef Id="AppFiles"/>
+    </Feature>
+
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+  </Product>
+</Wix>
