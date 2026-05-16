@@ -77,6 +77,8 @@ HANDLE g_workerStopEvent = nullptr;
 HANDLE g_workerWakeEvent = nullptr;
 HANDLE g_workerThread = nullptr;
 
+void LogMessage(const std::wstring& message);
+
 avstore::AvDatabaseManager g_avManager([](const std::wstring& message)
 {
     LogMessage(message);
@@ -84,7 +86,6 @@ avstore::AvDatabaseManager g_avManager([](const std::wstring& message)
 ULONGLONG g_nextAvUpdate = 0;
 
 std::wstring GetSelfDirectory();
-void LogMessage(const std::wstring& message);
 
 bool HasActiveLicenseUnlocked()
 {
