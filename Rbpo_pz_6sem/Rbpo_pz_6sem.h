@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include "resource.h"
+#include "Resource.h"
 #include <windows.h>
 
 constexpr UINT WMAPP_TRAYICON = WM_APP + 1;
@@ -18,7 +18,6 @@ BOOL InitMainWindow(HINSTANCE hInstance, int nCmdShow, bool startHidden);
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 
 bool IsStartHidden(LPWSTR cmdLine);
-bool CreateSingleInstanceMutex();
 void ReleaseSingleInstanceMutex();
 
 bool AddTrayIcon(HWND hWnd);

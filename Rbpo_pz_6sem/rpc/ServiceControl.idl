@@ -1,0 +1,9 @@
+[
+    uuid(5f04e7bb-8128-4f65-847c-248ea0f5c739),
+    version(1.0),
+    pointer_default(unique)
+]
+interface ServiceControl
+{
+    void RpcRequestStop([in] handle_t hBinding);
+}

@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "pzz2" ]
   pull_request:
 
 jobs:
@@ -26,10 +26,13 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path artifact -Force | Out-Null
-          $exe = Get-ChildItem -Recurse -Path build -Filter Rbpo_pz_6sem.exe | Select-Object -First 1
-          if (-not $exe) { throw "exe file was not found" }
-          Copy-Item $exe.FullName artifact/
-          Get-ChildItem $exe.Directory.FullName -Filter *.dll | ForEach-Object { Copy-Item $_.FullName artifact/ }
+          $gui = Get-ChildItem -Recurse -Path build -Filter Rbpo_pz_6sem.exe | Select-Object -First 1
+          $svc = Get-ChildItem -Recurse -Path build -Filter RbpoPz6SemService.exe | Select-Object -First 1
+          if (-not $gui) { throw "Rbpo_pz_6sem.exe was not found" }
+          if (-not $svc) { throw "RbpoPz6SemService.exe was not found" }
+          Copy-Item $gui.FullName artifact/
+          Copy-Item $svc.FullName artifact/
+          Get-ChildItem $gui.Directory.FullName -Filter *.dll | ForEach-Object { Copy-Item $_.FullName artifact/ }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
