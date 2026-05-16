@@ -76,7 +76,7 @@ jobs:
           & $heat dir artifact -cg AppFiles -dr INSTALLFOLDER -scom -sreg -sfrag -gg -out tools\installer\harvested.wxs
           & $candle -out tools\installer\product.wixobj tools\installer\product.wxs
           & $candle -out tools\installer\harvested.wixobj tools\installer\harvested.wxs
-          & $light -ext WixUtilExtension -out tools\installer\RbpoPzInstaller.msi tools\installer\product.wixobj tools\installer\harvested.wixobj
+          & $light -ext WixUtilExtension -b artifact tools\installer\product.wixobj tools\installer\harvested.wixobj -out tools\installer\RbpoPzInstaller.msi
 
       - name: Build Bundle
         shell: pwsh
