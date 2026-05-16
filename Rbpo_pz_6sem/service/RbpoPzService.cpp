@@ -4,6 +4,7 @@
 #include <rpc.h>
 #include <vector>
 #include <string>
+#include <filesystem>
 #include <cstdlib>
 #include <array>
 #include <sstream>
@@ -20,6 +21,7 @@
 
 #include "../AvEngine.h"
 #include "../common/AppConfig.h"
+#include "../common/AvDatabaseManager.h"
 #include "../rpc/ServiceControl.h"
 
 #if defined(_M_ARM64) || defined(_M_ARM64EC)
@@ -75,43 +77,18 @@ HANDLE g_workerStopEvent = nullptr;
 HANDLE g_workerWakeEvent = nullptr;
 HANDLE g_workerThread = nullptr;
 
-av::AvDatabase g_avDatabase{};
-bool g_avDatabaseLoaded = false;
+avstore::AvDatabaseManager g_avManager([](const std::wstring& message)
+{
+    LogMessage(message);
+});
+ULONGLONG g_nextAvUpdate = 0;
 
 std::wstring GetSelfDirectory();
 void LogMessage(const std::wstring& message);
 
-void LoadAvDatabase()
-{
-    EnterCriticalSection(&g_lock);
-    g_avDatabase = av::CreateDefaultDatabase();
-    g_avDatabaseLoaded = true;
-    LeaveCriticalSection(&g_lock);
-    LogMessage(L"Antivirus database loaded");
-}
-
-void ClearAvDatabase()
-{
-    EnterCriticalSection(&g_lock);
-    g_avDatabase = av::AvDatabase{};
-    g_avDatabaseLoaded = false;
-    LeaveCriticalSection(&g_lock);
-    LogMessage(L"Antivirus database cleared");
-}
-
 bool HasActiveLicenseUnlocked()
 {
     return g_licenseState.hasTicket && !g_licenseState.blocked;
-}
-
-std::size_t CountAvRecordsUnlocked()
-{
-    std::size_t total = 0;
-    for (const auto& entry : g_avDatabase.records)
-    {
-        total += entry.second.size();
-    }
-    return total;
 }
 
 std::wstring BuildScanSummary(const std::vector<av::ScanFinding>& hits, const std::wstring& footer)
@@ -1106,7 +1083,6 @@ bool CheckLicense(const std::wstring& accessToken)
         return false;
     }
 
-    LoadAvDatabase();
     return true;
 }
 
@@ -1138,7 +1114,6 @@ bool ActivateLicense(const std::wstring& accessToken, const std::wstring& activa
     }
 
     LogMessage(L"ActivateLicense success");
-    LoadAvDatabase();
     return true;
 }
 
@@ -1233,8 +1208,262 @@ void LogoutUser()
     ClearAuthState();
     ClearLicenseState();
     LeaveCriticalSection(&g_lock);
-    ClearAvDatabase();
     UpdateDeviceIdentityForUser(L"");
+}
+
+bool HexToBytes(const std::string& hex, std::vector<BYTE>& bytes)
+{
+    if (hex.size() % 2 != 0)
+    {
+        return false;
+    }
+
+    auto nibble = [](char c) -> int
+    {
+        if (c >= '0' && c <= '9')
+        {
+            return c - '0';
+        }
+        if (c >= 'a' && c <= 'f')
+        {
+            return c - 'a' + 10;
+        }
+        if (c >= 'A' && c <= 'F')
+        {
+            return c - 'A' + 10;
+        }
+        return -1;
+    };
+
+    bytes.clear();
+    bytes.reserve(hex.size() / 2);
+    for (size_t i = 0; i < hex.size(); i += 2)
+    {
+        const int hi = nibble(hex[i]);
+        const int lo = nibble(hex[i + 1]);
+        if (hi < 0 || lo < 0)
+        {
+            return false;
+        }
+        bytes.push_back(static_cast<BYTE>((hi << 4) | lo));
+    }
+    return true;
+}
+
+bool Base64ToBytes(const std::string& base64, std::vector<BYTE>& bytes)
+{
+    DWORD required = 0;
+    if (!CryptStringToBinaryA(base64.c_str(), static_cast<DWORD>(base64.size()), CRYPT_STRING_BASE64, nullptr, &required, nullptr, nullptr))
+    {
+        return false;
+    }
+
+    bytes.assign(required, 0);
+    if (!CryptStringToBinaryA(base64.c_str(), static_cast<DWORD>(base64.size()), CRYPT_STRING_BASE64, bytes.data(), &required, nullptr, nullptr))
+    {
+        return false;
+    }
+
+    bytes.resize(required);
+    return true;
+}
+
+std::string BytesToHex(const std::vector<BYTE>& bytes)
+{
+    static const char* hex = "0123456789ABCDEF";
+    std::string result;
+    result.reserve(bytes.size() * 2);
+    for (BYTE b : bytes)
+    {
+        result.push_back(hex[(b >> 4) & 0xF]);
+        result.push_back(hex[b & 0xF]);
+    }
+    return result;
+}
+
+bool ParseAvRecordFromJson(const std::string& json, av::AvRecord& record)
+{
+    long long prefix = 0;
+    long long objectSignatureLength = 0;
+    long long offsetBegin = 0;
+    long long offsetEnd = 0;
+    long long objectType = 0;
+    std::string objectSignatureHex;
+    std::string recordSignatureBase64;
+
+    if (!ExtractJsonNumber(json, "objectSignaturePrefix", prefix) ||
+        !ExtractJsonNumber(json, "objectSignatureLength", objectSignatureLength) ||
+        !ExtractJsonString(json, "objectSignature", objectSignatureHex) ||
+        !ExtractJsonNumber(json, "offsetBegin", offsetBegin) ||
+        !ExtractJsonNumber(json, "offsetEnd", offsetEnd) ||
+        !ExtractJsonNumber(json, "objectType", objectType))
+    {
+        return false;
+    }
+
+    if (!ExtractJsonString(json, "avRecordSignature", recordSignatureBase64))
+    {
+        std::string recordSignatureHex;
+        if (!ExtractJsonString(json, "avRecordSignatureHex", recordSignatureHex) || !HexToBytes(recordSignatureHex, record.avRecordSignature))
+        {
+            return false;
+        }
+    }
+    else if (!Base64ToBytes(recordSignatureBase64, record.avRecordSignature))
+    {
+        return false;
+    }
+
+    if (!HexToBytes(objectSignatureHex, record.objectSignature))
+    {
+        return false;
+    }
+
+    record.objectSignaturePrefix = static_cast<std::uint64_t>(prefix);
+    record.objectSignatureLength = static_cast<std::uint32_t>(objectSignatureLength);
+    record.offsetBegin = static_cast<std::int64_t>(offsetBegin);
+    record.offsetEnd = static_cast<std::int64_t>(offsetEnd);
+    record.objectType = static_cast<av::ObjectType>(static_cast<std::uint8_t>(objectType));
+    return true;
+}
+
+bool FetchAvRecordFromServer(const av::AvRecord& record, av::AvRecord& repaired)
+{
+    const std::string body =
+        "{\"objectSignaturePrefix\":" + std::to_string(record.objectSignaturePrefix) +
+        ",\"objectSignatureLength\":" + std::to_string(record.objectSignatureLength) +
+        ",\"objectSignature\":\"" + BytesToHex(record.objectSignature) +
+        "\",\"offsetBegin\":" + std::to_string(record.offsetBegin) +
+        ",\"offsetEnd\":" + std::to_string(record.offsetEnd) +
+        ",\"objectType\":" + std::to_string(static_cast<int>(record.objectType)) + "}";
+
+    HttpResponse response{};
+    if (!SendHttpsRequest(L"POST", kAvRecordPath, body, L"", response) || response.status != 200)
+    {
+        LogMessage(L"AV record fetch failed, status=" + std::to_wstring(response.status));
+        return false;
+    }
+
+    if (!ParseAvRecordFromJson(response.body, repaired))
+    {
+        LogMessage(L"AV record fetch: cannot parse response");
+        return false;
+    }
+
+    return true;
+}
+
+bool RepairAvRecord(const av::AvRecord& record, const std::vector<BYTE>&, av::AvRecord& repaired)
+{
+    return FetchAvRecordFromServer(record, repaired);
+}
+
+bool IsNetworkAvailable()
+{
+    HINTERNET session = WinHttpOpen(L"RbpoPz6SemService/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!session)
+    {
+        return false;
+    }
+
+    const std::wstring host = GetApiHost();
+    HINTERNET connect = WinHttpConnect(session, host.c_str(), GetApiPort(), 0);
+    const bool available = connect != nullptr;
+    if (connect)
+    {
+        WinHttpCloseHandle(connect);
+    }
+    WinHttpCloseHandle(session);
+    return available;
+}
+
+bool DownloadAvDatabase(std::vector<BYTE>& bytes)
+{
+    HttpResponse response{};
+    if (!SendHttpsRequest(L"GET", kAvBasesLatestPath, {}, L"", response) || response.status != 200)
+    {
+        LogMessage(L"AV update download failed, status=" + std::to_wstring(response.status));
+        return false;
+    }
+
+    bytes.assign(response.body.begin(), response.body.end());
+    return !bytes.empty();
+}
+
+bool TryUpdateAvBases(bool forceUpdate)
+{
+    const ULONGLONG now = GetNowFileTime();
+    if (!forceUpdate && now < g_nextAvUpdate)
+    {
+        return true;
+    }
+
+    const bool networkAvailable = IsNetworkAvailable();
+    g_avManager.SetNetworkAvailable(networkAvailable);
+    if (!networkAvailable)
+    {
+        LogMessage(L"AV update skipped: network unavailable");
+        return false;
+    }
+
+    LogMessage(forceUpdate ? L"AV: forced update started" : L"AV: scheduled update started");
+    g_avManager.BackupCurrent();
+
+    std::vector<BYTE> downloaded;
+    if (!DownloadAvDatabase(downloaded))
+    {
+        return false;
+    }
+
+    if (!g_avManager.SaveDownloadedBytes(downloaded))
+    {
+        LogMessage(L"AV update failed to save downloaded database");
+        g_avManager.RollbackToBackup();
+        return false;
+    }
+
+    const avstore::LoadReport report = g_avManager.ReloadCurrentFromDisk();
+    if (report.status != avstore::LoadStatus::Ok && report.status != avstore::LoadStatus::PartialRecordsLoaded)
+    {
+        LogMessage(L"AV update reload failed, rolling back");
+        g_avManager.RollbackToBackup();
+        return false;
+    }
+
+    g_nextAvUpdate = now + static_cast<ULONGLONG>(kAvUpdateIntervalHours) * 60ULL * 60ULL * 10000000ULL;
+    LogMessage(L"AV update completed, records=" + std::to_wstring(report.recordsLoaded));
+    return true;
+}
+
+void EnsureBundledAvDataInstalled()
+{
+    const auto current = avstore::GetCurrentDatabasePath();
+    if (std::filesystem::exists(current))
+    {
+        return;
+    }
+
+    if (avstore::InstallBundledDefaultDatabase())
+    {
+        LogMessage(L"AV: installed bundled default database");
+    }
+}
+
+void InitializeAvStorage()
+{
+    g_avManager.SetRecordFetcher(RepairAvRecord);
+    g_avManager.SetNetworkAvailable(IsNetworkAvailable());
+    EnsureBundledAvDataInstalled();
+    const avstore::LoadReport report = g_avManager.LoadStartupDatabase();
+    if (report.status == avstore::LoadStatus::ManifestSignatureFailed)
+    {
+        g_nextAvUpdate = GetNowFileTime();
+        LogMessage(L"AV: manifest failure, scheduling forced update");
+    }
+    else
+    {
+        g_nextAvUpdate = GetNowFileTime() + static_cast<ULONGLONG>(kAvUpdateIntervalHours) * 60ULL * 60ULL * 10000000ULL;
+    }
 }
 
 DWORD ComputeNextWakeMs()
@@ -1271,6 +1500,11 @@ DWORD ComputeNextWakeMs()
         }
     }
     LeaveCriticalSection(&g_lock);
+
+    if (g_nextAvUpdate < next)
+    {
+        next = g_nextAvUpdate;
+    }
 
     if (next <= now)
     {
@@ -1346,6 +1580,23 @@ DWORD WINAPI BackgroundWorkerThread(LPVOID)
                 EnterCriticalSection(&g_lock);
                 ClearLicenseState();
                 LeaveCriticalSection(&g_lock);
+            }
+        }
+
+        const bool forceUpdate = g_avManager.NeedsForcedUpdate();
+        if (forceUpdate || now >= g_nextAvUpdate)
+        {
+            g_avManager.SetNetworkAvailable(IsNetworkAvailable());
+            if (!TryUpdateAvBases(forceUpdate))
+            {
+                if (forceUpdate && IsNetworkAvailable())
+                {
+                    LogMessage(L"AV: forced update failed");
+                }
+            }
+            else if (forceUpdate)
+            {
+                g_avManager.SetManifestFailurePending(false);
             }
         }
     }
@@ -1769,10 +2020,14 @@ long RpcGetAvDatabaseInfo(handle_t, long* isLoaded, wchar_t** releaseDate, long*
         return ERROR_NOT_FOUND;
     }
 
-    *isLoaded = g_avDatabaseLoaded ? 1 : 0;
-    *recordCount = static_cast<long>(g_avDatabaseLoaded ? CountAvRecordsUnlocked() : 0);
-    const std::wstring text = g_avDatabaseLoaded ? av::FormatReleaseDate(g_avDatabase.releaseDate) : L"-";
+    const bool loaded = g_avManager.IsLoaded();
+    const av::AvDatabase database = g_avManager.Snapshot();
+    const std::size_t count = g_avManager.RecordCount();
     LeaveCriticalSection(&g_lock);
+
+    *isLoaded = loaded ? 1 : 0;
+    *recordCount = static_cast<long>(loaded ? count : 0);
+    const std::wstring text = loaded ? av::FormatReleaseDate(database.releaseDate) : L"-";
 
     *releaseDate = reinterpret_cast<wchar_t*>(MIDL_user_allocate((text.size() + 1) * sizeof(wchar_t)));
     if (!*releaseDate)
@@ -1795,12 +2050,12 @@ long RpcScanPath(handle_t, const wchar_t* path, long isFolder, long* infected, w
 
     av::AvDatabase db{};
     EnterCriticalSection(&g_lock);
-    if (!HasActiveLicenseUnlocked() || !g_avDatabaseLoaded)
+    if (!HasActiveLicenseUnlocked() || !g_avManager.IsLoaded())
     {
         LeaveCriticalSection(&g_lock);
         return ERROR_NOT_FOUND;
     }
-    db = g_avDatabase;
+    db = g_avManager.Snapshot();
     LeaveCriticalSection(&g_lock);
 
     std::vector<av::ScanFinding> hits;
@@ -1900,6 +2155,8 @@ void WINAPI ServiceMain(DWORD, LPWSTR*)
     ApplyProcessDacl();
 
     SetState(SERVICE_START_PENDING, 0);
+
+    InitializeAvStorage();
 
     if (!StartRpc())
     {

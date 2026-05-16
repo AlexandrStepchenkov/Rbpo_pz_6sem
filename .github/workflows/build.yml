@@ -32,6 +32,9 @@ jobs:
           Copy-Item $gui.FullName artifact/
           Copy-Item $svc.FullName artifact/
           Get-ChildItem $gui.Directory.FullName -Filter *.dll | ForEach-Object { Copy-Item $_.FullName artifact/ }
+          if (Test-Path $gui.Directory.FullName/data) {
+            Copy-Item -Recurse $gui.Directory.FullName/data artifact/data
+          }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

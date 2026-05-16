@@ -68,3 +68,16 @@ target_link_libraries(RbpoPz6SemService PRIVATE
     iphlpapi
     crypt32
 )
+
+set(RBPO_DATA_DIR ${CMAKE_SOURCE_DIR}/Rbpo_pz_6sem/data)
+foreach(target_name IN ITEMS Rbpo_pz_6sem RbpoPz6SemService)
+    add_custom_command(TARGET ${target_name} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${target_name}>/data
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${RBPO_DATA_DIR}/default.avdb
+            $<TARGET_FILE_DIR:${target_name}>/data/default.avdb
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${RBPO_DATA_DIR}/public_cert.pem
+            $<TARGET_FILE_DIR:${target_name}>/data/public_cert.pem
+    )
+endforeach()
