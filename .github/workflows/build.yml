@@ -54,17 +54,51 @@ jobs:
       - name: Build MSI installer
         shell: pwsh
         run: |
-          # harvest files from artifact
-          & "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin\heat.exe" dir artifact -cg AppFiles -dr INSTALLFOLDER -scom -sreg -sfrag -gg -out tools\installer\harvested.wxs
-          & "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin\candle.exe" tools\installer\product.wxs tools\installer\harvested.wxs -outdir tools\installer
-          & "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin\light.exe" tools\installer\product.wixobj tools\installer\harvested.wixobj -ext WixUtilExtension -out tools\installer\RbpoPzInstaller.msi
+          function Resolve-Tool($name) {
+            $cmd = Get-Command $name -ErrorAction SilentlyContinue
+            if ($cmd) { return $cmd.Path }
+            $paths = @($env:ProgramFiles, $env:ProgramFiles(x86))
+            foreach ($p in $paths) {
+              if (-not $p) { continue }
+              $found = Get-ChildItem -Path $p -Filter $name -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($found) { return $found.FullName }
+            }
+            return $null
+          }
+
+          $heat = Resolve-Tool 'heat.exe'
+          $candle = Resolve-Tool 'candle.exe'
+          $light = Resolve-Tool 'light.exe'
+          if (-not $heat) { Write-Error 'heat.exe not found. Ensure WiX Toolset is installed.'; exit 1 }
+          if (-not $candle) { Write-Error 'candle.exe not found. Ensure WiX Toolset is installed.'; exit 1 }
+          if (-not $light) { Write-Error 'light.exe not found. Ensure WiX Toolset is installed.'; exit 1 }
+
+          & $heat dir artifact -cg AppFiles -dr INSTALLFOLDER -scom -sreg -sfrag -gg -out tools\installer\harvested.wxs
+          & $candle tools\installer\product.wxs tools\installer\harvested.wxs -outdir tools\installer
+          & $light tools\installer\product.wixobj tools\installer\harvested.wixobj -ext WixUtilExtension -out tools\installer\RbpoPzInstaller.msi
 
       - name: Build Bundle
         shell: pwsh
         run: |
-          # produce bundle exe that chains VC redist and MSI
-          & "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin\candle.exe" tools\installer\bundle.wxs -outdir tools\installer
-          & "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin\light.exe" tools\installer\bundle.wixobj -ext WixBalExtension -out tools\installer\RbpoPzInstaller.exe
+          function Resolve-Tool($name) {
+            $cmd = Get-Command $name -ErrorAction SilentlyContinue
+            if ($cmd) { return $cmd.Path }
+            $paths = @($env:ProgramFiles, $env:ProgramFiles(x86))
+            foreach ($p in $paths) {
+              if (-not $p) { continue }
+              $found = Get-ChildItem -Path $p -Filter $name -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($found) { return $found.FullName }
+            }
+            return $null
+          }
+
+          $candle = Resolve-Tool 'candle.exe'
+          $light = Resolve-Tool 'light.exe'
+          if (-not $candle) { Write-Error 'candle.exe not found. Ensure WiX Toolset is installed.'; exit 1 }
+          if (-not $light) { Write-Error 'light.exe not found. Ensure WiX Toolset is installed.'; exit 1 }
+
+          & $candle tools\installer\bundle.wxs -outdir tools\installer
+          & $light tools\installer\bundle.wixobj -ext WixBalExtension -out tools\installer\RbpoPzInstaller.exe
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
