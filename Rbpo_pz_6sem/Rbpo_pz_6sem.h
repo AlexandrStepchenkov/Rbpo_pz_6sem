@@ -1,27 +1,34 @@
 ﻿#pragma once
 
-#include "resource.h"
-#include <windows.h>
+#include "framework.h"
+#include "Resource.h"
+#include <shellapi.h>
+#include <string>
 
-constexpr UINT WMAPP_TRAYICON = WM_APP + 1;
-constexpr UINT TRAY_ICON_ID = 1;
+#define MAX_LOADSTRING 100
 
-extern HINSTANCE g_hInst;
-extern WCHAR g_szTitle[100];
-extern WCHAR g_szWindowClass[100];
-extern HANDLE g_singleInstanceMutex;
-extern bool g_isExiting;
+constexpr UINT WM_TRAYICON = WM_APP + 1;
+constexpr UINT ID_TRAY_ICON = 1;
+
+extern HINSTANCE hInst;
+extern WCHAR szTitle[MAX_LOADSTRING];
+extern WCHAR szWindowClass[MAX_LOADSTRING];
+
 extern UINT g_taskbarCreatedMessage;
+extern NOTIFYICONDATAW g_notifyIconData;
+extern bool g_trayAdded;
+extern bool g_isExiting;
+extern HANDLE g_singleInstanceMutex;
+extern bool g_antivirusEnabled;
 
-ATOM RegisterMainWindowClass(HINSTANCE hInstance);
-BOOL InitMainWindow(HINSTANCE hInstance, int nCmdShow, bool startHidden);
+ATOM MyRegisterClass(HINSTANCE hInstance);
+BOOL InitInstance(HINSTANCE hInstance, int nCmdShow, bool startHidden);
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
 
-bool IsStartHidden(LPWSTR cmdLine);
-bool CreateSingleInstanceMutex();
-void ReleaseSingleInstanceMutex();
-
-bool AddTrayIcon(HWND hWnd);
-void RemoveTrayIcon(HWND hWnd);
-void ShowTrayMenu(HWND hWnd);
+std::wstring BuildMutexNamePerUser();
 void ShowMainWindow(HWND hWnd);
+void AddTrayIcon(HWND hWnd);
+void RemoveTrayIcon();
+void ShowTrayContextMenu(HWND hWnd);
+void RefreshLicenseStatus(HWND hWnd);
