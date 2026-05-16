@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include "framework.h"
 #include "Resource.h"
 #include <shellapi.h>
 #include <string>
@@ -8,8 +9,6 @@
 
 constexpr UINT WM_TRAYICON = WM_APP + 1;
 constexpr UINT ID_TRAY_ICON = 1;
-constexpr UINT IDM_TRAY_OPEN = 40001;
-constexpr UINT IDM_TRAY_EXIT = 40002;
 
 extern HINSTANCE hInst;
 extern WCHAR szTitle[MAX_LOADSTRING];

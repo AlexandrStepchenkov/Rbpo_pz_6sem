@@ -7,7 +7,7 @@ if(NOT CMAKE_GENERATOR_PLATFORM)
 endif()
 
 if(MSVC)
-    add_compile_options(/W4 /WX-)
+    add_compile_options(/W4 /WX- /EHsc)
 endif()
 
 set(RBPO_COMMON_INCLUDES
