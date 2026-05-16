@@ -1,6 +1,5 @@
 ﻿#pragma once
 
-#include "framework.h"
 #include "Resource.h"
 #include <shellapi.h>
 #include <string>
@@ -32,3 +31,12 @@ void AddTrayIcon(HWND hWnd);
 void RemoveTrayIcon();
 void ShowTrayContextMenu(HWND hWnd);
 void RefreshLicenseStatus(HWND hWnd);
+void RefreshAvStatusText();
+void ScanSelectedFile(HWND owner);
+void ScanSelectedFolder(HWND owner);
+void ShowScanResults(HWND owner);
+void ScanAllFixedDrives(HWND owner);
+void ConfigureScheduledScan(HWND owner);
+void ToggleScheduledScan(HWND owner);
+void AddMonitoringDirectory(HWND owner);
+void ShowMonitoredDirectories(HWND owner);

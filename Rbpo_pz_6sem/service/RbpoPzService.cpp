@@ -18,6 +18,7 @@
 
 #pragma warning(disable : 4710 4711 4820 5039 5045)
 
+#include "../AvEngine.h"
 #include "../common/AppConfig.h"
 #include "../rpc/ServiceControl.h"
 
@@ -74,7 +75,60 @@ HANDLE g_workerStopEvent = nullptr;
 HANDLE g_workerWakeEvent = nullptr;
 HANDLE g_workerThread = nullptr;
 
+av::AvDatabase g_avDatabase{};
+bool g_avDatabaseLoaded = false;
+
 std::wstring GetSelfDirectory();
+
+void LoadAvDatabase()
+{
+    EnterCriticalSection(&g_lock);
+    g_avDatabase = av::CreateDefaultDatabase();
+    g_avDatabaseLoaded = true;
+    LeaveCriticalSection(&g_lock);
+    LogMessage(L"Antivirus database loaded");
+}
+
+void ClearAvDatabase()
+{
+    EnterCriticalSection(&g_lock);
+    g_avDatabase = av::AvDatabase{};
+    g_avDatabaseLoaded = false;
+    LeaveCriticalSection(&g_lock);
+    LogMessage(L"Antivirus database cleared");
+}
+
+bool HasActiveLicenseUnlocked()
+{
+    return g_licenseState.hasTicket && !g_licenseState.blocked;
+}
+
+std::size_t CountAvRecordsUnlocked()
+{
+    std::size_t total = 0;
+    for (const auto& entry : g_avDatabase.records)
+    {
+        total += entry.second.size();
+    }
+    return total;
+}
+
+std::wstring BuildScanSummary(const std::vector<av::ScanFinding>& hits, const std::wstring& footer)
+{
+    std::wstring summary = footer;
+    if (!hits.empty())
+    {
+        summary += L"\r\n\r\n";
+        for (const auto& finding : hits)
+        {
+            summary += L"Файл: " + finding.matchedPath + L"\r\n";
+            summary += L"Тип: " + av::ObjectTypeName(finding.objectType) + L"\r\n";
+            summary += L"Смещение: " + std::to_wstring(finding.offset) + L"\r\n";
+            summary += L"Сигнатура: " + finding.matchedSignature + L"\r\n\r\n";
+        }
+    }
+    return summary;
+}
 
 std::wstring GetApiHost()
 {
@@ -1046,7 +1100,13 @@ bool CheckLicense(const std::wstring& accessToken)
     EnterCriticalSection(&g_lock);
     activationKey = g_licenseState.activationKey;
     LeaveCriticalSection(&g_lock);
-    return UpdateLicenseStateFromResponse(response.body, activationKey);
+    if (!UpdateLicenseStateFromResponse(response.body, activationKey))
+    {
+        return false;
+    }
+
+    LoadAvDatabase();
+    return true;
 }
 
 bool ActivateLicense(const std::wstring& accessToken, const std::wstring& activationKey)
@@ -1077,6 +1137,7 @@ bool ActivateLicense(const std::wstring& accessToken, const std::wstring& activa
     }
 
     LogMessage(L"ActivateLicense success");
+    LoadAvDatabase();
     return true;
 }
 
@@ -1171,6 +1232,7 @@ void LogoutUser()
     ClearAuthState();
     ClearLicenseState();
     LeaveCriticalSection(&g_lock);
+    ClearAvDatabase();
     UpdateDeviceIdentityForUser(L"");
 }
 
@@ -1690,6 +1752,89 @@ long RpcGetLicenseInfo(handle_t, long* hasLicense, long* blocked, wchar_t** expi
     }
 
     return hasTicket ? ERROR_SUCCESS : ERROR_NOT_FOUND;
+}
+
+long RpcGetAvDatabaseInfo(handle_t, long* isLoaded, wchar_t** releaseDate, long* recordCount)
+{
+    if (!isLoaded || !releaseDate || !recordCount)
+    {
+        return ERROR_INVALID_PARAMETER;
+    }
+
+    EnterCriticalSection(&g_lock);
+    if (!HasActiveLicenseUnlocked())
+    {
+        LeaveCriticalSection(&g_lock);
+        return ERROR_NOT_FOUND;
+    }
+
+    *isLoaded = g_avDatabaseLoaded ? 1 : 0;
+    *recordCount = static_cast<long>(g_avDatabaseLoaded ? CountAvRecordsUnlocked() : 0);
+    const std::wstring text = g_avDatabaseLoaded ? av::FormatReleaseDate(g_avDatabase.releaseDate) : L"-";
+    LeaveCriticalSection(&g_lock);
+
+    *releaseDate = reinterpret_cast<wchar_t*>(MIDL_user_allocate((text.size() + 1) * sizeof(wchar_t)));
+    if (!*releaseDate)
+    {
+        return ERROR_OUTOFMEMORY;
+    }
+
+    wcscpy_s(*releaseDate, text.size() + 1, text.c_str());
+    return ERROR_SUCCESS;
+}
+
+long RpcScanPath(handle_t, const wchar_t* path, long isFolder, long* infected, wchar_t** summary)
+{
+    if (!path || !infected || !summary)
+    {
+        return ERROR_INVALID_PARAMETER;
+    }
+
+    *infected = 0;
+
+    av::AvDatabase db{};
+    EnterCriticalSection(&g_lock);
+    if (!HasActiveLicenseUnlocked() || !g_avDatabaseLoaded)
+    {
+        LeaveCriticalSection(&g_lock);
+        return ERROR_NOT_FOUND;
+    }
+    db = g_avDatabase;
+    LeaveCriticalSection(&g_lock);
+
+    std::vector<av::ScanFinding> hits;
+    std::wstring text;
+
+    if (isFolder != 0)
+    {
+        text = av::ScanFolder(path, db, hits);
+        *infected = hits.empty() ? 0 : 1;
+    }
+    else
+    {
+        av::ScanFinding finding{};
+        if (av::ScanFile(path, db, finding) && finding.infected)
+        {
+            hits.push_back(finding);
+            *infected = 1;
+            text = L"Файл признан вредоносным.";
+        }
+        else
+        {
+            text = L"Вредоносные сигнатуры не найдены.";
+        }
+    }
+
+    text = BuildScanSummary(hits, text);
+
+    *summary = reinterpret_cast<wchar_t*>(MIDL_user_allocate((text.size() + 1) * sizeof(wchar_t)));
+    if (!*summary)
+    {
+        return ERROR_OUTOFMEMORY;
+    }
+
+    wcscpy_s(*summary, text.size() + 1, text.c_str());
+    return ERROR_SUCCESS;
 }
 
 long RpcActivate(handle_t, const wchar_t* activationKey)

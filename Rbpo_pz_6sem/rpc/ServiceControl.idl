@@ -11,4 +11,6 @@ interface ServiceControl
     long RpcLogout([in] handle_t hBinding);
     long RpcGetLicenseInfo([in] handle_t hBinding, [out] long* hasLicense, [out] long* blocked, [out, string] wchar_t** expirationDate);
     long RpcActivate([in] handle_t hBinding, [in, string] const wchar_t* activationKey);
+    long RpcGetAvDatabaseInfo([in] handle_t hBinding, [out] long* isLoaded, [out, string] wchar_t** releaseDate, [out] long* recordCount);
+    long RpcScanPath([in] handle_t hBinding, [in, string] const wchar_t* path, [in] long isFolder, [out] long* infected, [out, string] wchar_t** summary);
 }

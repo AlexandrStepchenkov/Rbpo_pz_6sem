@@ -250,6 +250,43 @@ long RpcActivate(
 }
 
 
+long RpcGetAvDatabaseInfo( 
+    /* [in] */ handle_t hBinding,
+    /* [out] */ long *isLoaded,
+    /* [string][out] */ wchar_t **releaseDate,
+    /* [out] */ long *recordCount)
+{
+
+    CLIENT_CALL_RETURN _RetVal;
+
+    _RetVal = NdrClientCall2(
+                  ( PMIDL_STUB_DESC  )&ServiceControl_StubDesc,
+                  (PFORMAT_STRING) &ServiceControl__MIDL_ProcFormatString.Format[246],
+                  ( unsigned char * )&hBinding);
+    return ( long  )_RetVal.Simple;
+    
+}
+
+
+long RpcScanPath( 
+    /* [in] */ handle_t hBinding,
+    /* [string][in] */ const wchar_t *path,
+    /* [in] */ long isFolder,
+    /* [out] */ long *infected,
+    /* [string][out] */ wchar_t **summary)
+{
+
+    CLIENT_CALL_RETURN _RetVal;
+
+    _RetVal = NdrClientCall2(
+                  ( PMIDL_STUB_DESC  )&ServiceControl_StubDesc,
+                  (PFORMAT_STRING) &ServiceControl__MIDL_ProcFormatString.Format[300],
+                  ( unsigned char * )&hBinding);
+    return ( long  )_RetVal.Simple;
+    
+}
+
+
 #if !defined(__RPC_WIN32__)
 #error  Invalid build platform for this stub.
 #endif
@@ -473,6 +510,106 @@ static const ServiceControl_MIDL_PROC_FORMAT_STRING ServiceControl__MIDL_ProcFor
 /* 244 */	0x8,		/* FC_LONG */
 			0x0,		/* 0 */
 
+	/* Procedure RpcGetAvDatabaseInfo */
+
+/* 246 */	0x0,		/* 0 */
+			0x48,		/* Old Flags:  */
+/* 248 */	NdrFcLong( 0x0 ),	/* 0 */
+/* 252 */	NdrFcShort( 0x6 ),	/* 6 */
+/* 254 */	NdrFcShort( 0x14 ),	/* x86 Stack size/offset = 20 */
+/* 256 */	0x32,		/* FC_BIND_PRIMITIVE */
+			0x0,		/* 0 */
+/* 258 */	NdrFcShort( 0x0 ),	/* x86 Stack size/offset = 0 */
+/* 260 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 262 */	NdrFcShort( 0x40 ),	/* 64 */
+/* 264 */	0x45,		/* Oi2 Flags:  srv must size, has return, has ext, */
+			0x4,		/* 4 */
+/* 266 */	0x8,		/* 8 */
+			0x1,		/* Ext Flags:  new corr desc, */
+/* 268 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 270 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 272 */	NdrFcShort( 0x0 ),	/* 0 */
+
+	/* Parameter isLoaded */
+
+/* 274 */	NdrFcShort( 0x2150 ),	/* Flags:  out, base type, simple ref, srv alloc size=8 */
+/* 276 */	NdrFcShort( 0x4 ),	/* x86 Stack size/offset = 4 */
+/* 278 */	0x8,		/* FC_LONG */
+			0x0,		/* 0 */
+
+	/* Parameter releaseDate */
+
+/* 280 */	NdrFcShort( 0x2013 ),	/* Flags:  must size, must free, out, srv alloc size=8 */
+/* 282 */	NdrFcShort( 0x8 ),	/* x86 Stack size/offset = 8 */
+/* 284 */	NdrFcShort( 0x6 ),	/* Type Offset=6 */
+
+	/* Parameter recordCount */
+
+/* 286 */	NdrFcShort( 0x2150 ),	/* Flags:  out, base type, simple ref, srv alloc size=8 */
+/* 288 */	NdrFcShort( 0xc ),	/* x86 Stack size/offset = 12 */
+/* 290 */	0x8,		/* FC_LONG */
+			0x0,		/* 0 */
+
+	/* Return value */
+
+/* 292 */	NdrFcShort( 0x70 ),	/* Flags:  out, return, base type, */
+/* 294 */	NdrFcShort( 0x10 ),	/* x86 Stack size/offset = 16 */
+/* 296 */	0x8,		/* FC_LONG */
+			0x0,		/* 0 */
+
+	/* Procedure RpcScanPath */
+
+/* 300 */	0x0,		/* 0 */
+			0x48,		/* Old Flags:  */
+/* 302 */	NdrFcLong( 0x0 ),	/* 0 */
+/* 306 */	NdrFcShort( 0x7 ),	/* 7 */
+/* 308 */	NdrFcShort( 0x18 ),	/* x86 Stack size/offset = 24 */
+/* 310 */	0x32,		/* FC_BIND_PRIMITIVE */
+			0x0,		/* 0 */
+/* 312 */	NdrFcShort( 0x0 ),	/* x86 Stack size/offset = 0 */
+/* 314 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 316 */	NdrFcShort( 0x38 ),	/* 56 */
+/* 318 */	0x47,		/* Oi2 Flags:  srv must size, clt must size, has return, has ext, */
+			0x5,		/* 5 */
+/* 320 */	0x8,		/* 8 */
+			0x1,		/* Ext Flags:  new corr desc, */
+/* 322 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 324 */	NdrFcShort( 0x0 ),	/* 0 */
+/* 326 */	NdrFcShort( 0x0 ),	/* 0 */
+
+	/* Parameter path */
+
+/* 328 */	NdrFcShort( 0x10b ),	/* Flags:  must size, must free, in, simple ref, */
+/* 330 */	NdrFcShort( 0x4 ),	/* x86 Stack size/offset = 4 */
+/* 332 */	NdrFcShort( 0x10 ),	/* Type Offset=16 */
+
+	/* Parameter isFolder */
+
+/* 334 */	NdrFcShort( 0x48 ),	/* Flags:  in, base type, */
+/* 336 */	NdrFcShort( 0x8 ),	/* x86 Stack size/offset = 8 */
+/* 338 */	0x8,		/* FC_LONG */
+			0x0,		/* 0 */
+
+	/* Parameter infected */
+
+/* 340 */	NdrFcShort( 0x2150 ),	/* Flags:  out, base type, simple ref, srv alloc size=8 */
+/* 342 */	NdrFcShort( 0xc ),	/* x86 Stack size/offset = 12 */
+/* 344 */	0x8,		/* FC_LONG */
+			0x0,		/* 0 */
+
+	/* Parameter summary */
+
+/* 346 */	NdrFcShort( 0x2013 ),	/* Flags:  must size, must free, out, srv alloc size=8 */
+/* 348 */	NdrFcShort( 0x10 ),	/* x86 Stack size/offset = 16 */
+/* 350 */	NdrFcShort( 0x6 ),	/* Type Offset=6 */
+
+	/* Return value */
+
+/* 352 */	NdrFcShort( 0x70 ),	/* Flags:  out, return, base type, */
+/* 354 */	NdrFcShort( 0x14 ),	/* x86 Stack size/offset = 20 */
+/* 356 */	0x8,		/* FC_LONG */
+			0x0,		/* 0 */
+
 			0x0
         }
     };
@@ -511,7 +648,9 @@ static const unsigned short ServiceControl_FormatStringOffsetTable[] =
     74,
     120,
     154,
-    206
+    206,
+    246,
+    300
     };
 
 

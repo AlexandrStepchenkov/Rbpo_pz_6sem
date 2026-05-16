@@ -40,7 +40,18 @@ BEGIN
     POPUP "&Файл"
     BEGIN
         MENUITEM "Выйти из &аккаунта",      IDM_LOGOUT
+        MENUITEM "Сканировать &файл...",    IDM_SCAN_FILE
+        MENUITEM "Сканировать &папку...",    IDM_SCAN_FOLDER
+        MENUITEM "Сканировать &все несъёмные диски", IDM_SCAN_ALL_DRIVES
+        MENUITEM "Показать результаты &сканирования", IDM_SCAN_RESULTS
         MENUITEM "Вы&ход",                IDM_EXIT
+    END
+    POPUP "&Дополнительно"
+    BEGIN
+        MENUITEM "Вкл/выкл &расписание",   IDM_SCHEDULE_SCAN
+        MENUITEM "&Настроить расписание...", IDM_SCHEDULE_SETTINGS
+        MENUITEM "Добавить папку &мониторинга...", IDM_MONITOR_ADD
+        MENUITEM "Показать папки &мониторинга", IDM_MONITOR_LIST
     END
     POPUP "&Справка"
     BEGIN
@@ -99,6 +110,19 @@ BEGIN
     EDITTEXT        IDC_ACTIVATION_KEY,10,30,200,14,ES_AUTOHSCROLL
     DEFPUSHBUTTON   "Активировать",IDOK,60,60,70,14
     PUSHBUTTON      "Отмена",IDCANCEL,140,60,70,14
+END
+
+IDD_SCHEDULE_DIALOG DIALOGEX 0, 0, 220, 100
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Расписание сканирования"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    LTEXT           "Интервал, минут:",IDC_STATIC,10,12,90,8
+    EDITTEXT        IDC_SCHEDULE_MINUTES,10,28,80,14,ES_AUTOHSCROLL
+    LTEXT           "Статус:",IDC_STATIC,10,50,40,8
+    LTEXT           "-",IDC_SCHEDULE_STATUS,60,50,140,8
+    DEFPUSHBUTTON   "ОК",IDOK,60,72,50,14
+    PUSHBUTTON      "Отмена",IDCANCEL,130,72,50,14
 END
 
 /////////////////////////////////////////////////////////////////////////////

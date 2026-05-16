@@ -3,8 +3,12 @@
 #include <lmcons.h>
 #include <tlhelp32.h>
 #include <rpc.h>
+#include <commdlg.h>
+#include <shlobj.h>
 #include <cstdlib>
 #include <array>
+#include <mutex>
+#include <vector>
 #include <Aclapi.h>
 #include <Accctrl.h>
 
@@ -27,6 +31,9 @@ extern "C" {
 
 #pragma comment(lib, "Rpcrt4.lib")
 #pragma comment(lib, "Advapi32.lib")
+#pragma comment(lib, "Comdlg32.lib")
+#pragma comment(lib, "Shell32.lib")
+#pragma comment(lib, "Ole32.lib")
 
 HINSTANCE hInst;
 WCHAR szTitle[MAX_LOADSTRING];
@@ -42,8 +49,15 @@ HWND g_userText = nullptr;
 HWND g_licenseText = nullptr;
 HWND g_expirationText = nullptr;
 HWND g_scanButton = nullptr;
+HWND g_avStatusText = nullptr;
 bool g_antivirusEnabled = false;
 bool g_uiFlowRunning = false;
+bool g_scheduleEnabled = false;
+unsigned int g_scheduleIntervalMinutes = 60;
+std::wstring g_lastScanSummary;
+std::vector<std::wstring> g_monitoredDirectories;
+std::mutex g_stateMutex;
+constexpr UINT_PTR kScheduleTimerId = 2;
 constexpr UINT WM_APP_STARTUP = WM_APP + 10;
 constexpr UINT WM_APP_REFRESH_LICENSE = WM_APP + 11;
 
@@ -266,6 +280,76 @@ DWORD RpcCallActivate(const std::wstring& activationKey)
     return status;
 }
 
+DWORD RpcCallGetAvDatabaseInfo(bool& isLoaded, std::wstring& releaseDate, long& recordCount)
+{
+    handle_t binding = nullptr;
+    if (!CreateRpcBinding(binding))
+    {
+        return ERROR_GEN_FAILURE;
+    }
+
+    long loaded = 0;
+    wchar_t* date = nullptr;
+    long count = 0;
+    long status = ERROR_GEN_FAILURE;
+
+    RpcTryExcept
+    {
+        status = RpcGetAvDatabaseInfo(binding, &loaded, &date, &count);
+    }
+    RpcExcept(1)
+    {
+        status = ERROR_GEN_FAILURE;
+    }
+    RpcEndExcept;
+
+    FreeRpcBinding(binding);
+
+    if (date)
+    {
+        releaseDate = date;
+        MIDL_user_free(date);
+    }
+
+    isLoaded = loaded != 0;
+    recordCount = count;
+    return status;
+}
+
+DWORD RpcCallScanPath(const std::wstring& path, bool isFolder, bool& infected, std::wstring& summary)
+{
+    handle_t binding = nullptr;
+    if (!CreateRpcBinding(binding))
+    {
+        return ERROR_GEN_FAILURE;
+    }
+
+    long isInfected = 0;
+    wchar_t* text = nullptr;
+    long status = ERROR_GEN_FAILURE;
+
+    RpcTryExcept
+    {
+        status = RpcScanPath(binding, path.c_str(), isFolder ? 1 : 0, &isInfected, &text);
+    }
+    RpcExcept(1)
+    {
+        status = ERROR_GEN_FAILURE;
+    }
+    RpcEndExcept;
+
+    FreeRpcBinding(binding);
+
+    if (text)
+    {
+        summary = text;
+        MIDL_user_free(text);
+    }
+
+    infected = isInfected != 0;
+    return status;
+}
+
 extern "C" void* __RPC_USER MIDL_user_allocate(size_t size)
 {
     return malloc(size);
@@ -403,6 +487,9 @@ void ShowTrayContextMenu(HWND hWnd)
     }
 
     AppendMenuW(hMenu, MF_STRING, IDM_TRAY_OPEN, L"Открыть");
+    AppendMenuW(hMenu, MF_STRING, IDM_SCAN_FILE, L"Сканировать файл...");
+    AppendMenuW(hMenu, MF_STRING, IDM_SCAN_FOLDER, L"Сканировать папку...");
+    AppendMenuW(hMenu, MF_STRING, IDM_SCAN_RESULTS, L"Результаты сканирования");
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(hMenu, MF_STRING, IDM_TRAY_EXIT, L"Выход");
 
@@ -754,6 +841,306 @@ void SetAntivirusControlsEnabled(bool enabled)
     }
 }
 
+void UpdateAvStatusLine(const std::wstring& text)
+{
+    if (g_avStatusText)
+    {
+        SetWindowTextW(g_avStatusText, text.c_str());
+    }
+}
+
+void RefreshAvStatusText()
+{
+    if (!g_antivirusEnabled)
+    {
+        UpdateAvStatusLine(L"Антивирусные базы: недоступны (нет лицензии)");
+        return;
+    }
+
+    bool loaded = false;
+    std::wstring releaseDate;
+    long recordCount = 0;
+    const DWORD status = RpcCallGetAvDatabaseInfo(loaded, releaseDate, recordCount);
+    if (status != ERROR_SUCCESS || !loaded)
+    {
+        UpdateAvStatusLine(L"Антивирусные базы: не загружены");
+        return;
+    }
+
+    UpdateAvStatusLine(L"Антивирусные базы: " + releaseDate + L", записей: " + std::to_wstring(recordCount));
+}
+
+bool RunRpcScan(HWND owner, const std::wstring& path, bool isFolder)
+{
+    bool infected = false;
+    std::wstring summary;
+    const DWORD status = RpcCallScanPath(path, isFolder, infected, summary);
+    if (status == ERROR_NOT_FOUND)
+    {
+        MessageBoxW(owner, L"Сканирование недоступно: нет лицензии или базы.", L"Сканирование", MB_OK | MB_ICONWARNING);
+        return false;
+    }
+
+    if (status != ERROR_SUCCESS)
+    {
+        MessageBoxW(owner, L"Ошибка RPC при сканировании.", L"Сканирование", MB_OK | MB_ICONERROR);
+        return false;
+    }
+
+    g_lastScanSummary = summary;
+    MessageBoxW(owner, summary.c_str(), infected ? L"Сканирование: угроза" : L"Сканирование", infected ? MB_OK | MB_ICONWARNING : MB_OK | MB_ICONINFORMATION);
+    return true;
+}
+
+void ShowScanResults(HWND owner)
+{
+    if (g_lastScanSummary.empty())
+    {
+        MessageBoxW(owner, L"Результаты сканирования отсутствуют.", L"Результаты сканирования", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+
+    MessageBoxW(owner, g_lastScanSummary.c_str(), L"Результаты сканирования", MB_OK | MB_ICONWARNING);
+}
+
+void ScanSelectedFile(HWND owner)
+{
+    if (!g_antivirusEnabled)
+    {
+        MessageBoxW(owner, L"Антивирус заблокирован.", L"Сканирование", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    wchar_t fileName[MAX_PATH]{};
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = owner;
+    ofn.lpstrFile = fileName;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrFilter = L"All Files\0*.*\0";
+    ofn.nFilterIndex = 1;
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY;
+
+    if (!GetOpenFileNameW(&ofn))
+    {
+        return;
+    }
+
+    RunRpcScan(owner, fileName, false);
+}
+
+void ScanSelectedFolder(HWND owner)
+{
+    if (!g_antivirusEnabled)
+    {
+        MessageBoxW(owner, L"Антивирус заблокирован.", L"Сканирование", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    BROWSEINFOW bi{};
+    bi.hwndOwner = owner;
+    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+    bi.lpszTitle = L"Выберите папку для сканирования";
+    PIDLIST_ABSOLUTE folder = SHBrowseForFolderW(&bi);
+    if (!folder)
+    {
+        return;
+    }
+
+    wchar_t path[MAX_PATH]{};
+    if (!SHGetPathFromIDListW(folder, path))
+    {
+        CoTaskMemFree(folder);
+        return;
+    }
+
+    CoTaskMemFree(folder);
+    RunRpcScan(owner, path, true);
+}
+
+void ScanAllFixedDrives(HWND owner)
+{
+    if (!g_antivirusEnabled)
+    {
+        MessageBoxW(owner, L"Антивирус заблокирован.", L"Сканирование", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    std::wstring report = L"Сканирование несъёмных дисков:\r\n";
+    const DWORD drives = GetLogicalDrives();
+    for (wchar_t letter = L'A'; letter <= L'Z'; ++letter)
+    {
+        if ((drives & (1u << (letter - L'A'))) == 0)
+        {
+            continue;
+        }
+
+        wchar_t root[] = { letter, L':', L'\\', L'\0' };
+        if (GetDriveTypeW(root) != DRIVE_FIXED)
+        {
+            continue;
+        }
+
+        bool infected = false;
+        std::wstring summary;
+        if (RpcCallScanPath(root, true, infected, summary) == ERROR_SUCCESS)
+        {
+            report += root;
+            report += L" -> ";
+            report += summary;
+            report += L"\r\n";
+        }
+    }
+
+    g_lastScanSummary = report;
+    MessageBoxW(owner, report.c_str(), L"Сканирование дисков", MB_OK | MB_ICONINFORMATION);
+}
+
+struct ScheduleDialogState
+{
+    unsigned int minutes = 60;
+    bool accepted = false;
+};
+
+INT_PTR CALLBACK ScheduleDialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    switch (message)
+    {
+    case WM_INITDIALOG:
+    {
+        auto* state = reinterpret_cast<ScheduleDialogState*>(lParam);
+        SetWindowLongPtr(hDlg, DWLP_USER, reinterpret_cast<LONG_PTR>(state));
+        if (state)
+        {
+            SetDlgItemInt(hDlg, IDC_SCHEDULE_MINUTES, state->minutes, FALSE);
+            SetDlgItemTextW(hDlg, IDC_SCHEDULE_STATUS, g_scheduleEnabled ? L"включено" : L"выключено");
+        }
+        return TRUE;
+    }
+    case WM_COMMAND:
+        if (LOWORD(wParam) == IDOK)
+        {
+            auto* state = reinterpret_cast<ScheduleDialogState*>(GetWindowLongPtr(hDlg, DWLP_USER));
+            if (state)
+            {
+                BOOL translated = FALSE;
+                const UINT value = GetDlgItemInt(hDlg, IDC_SCHEDULE_MINUTES, &translated, FALSE);
+                if (translated && value > 0)
+                {
+                    state->minutes = value;
+                    state->accepted = true;
+                }
+            }
+            EndDialog(hDlg, IDOK);
+            return TRUE;
+        }
+        if (LOWORD(wParam) == IDCANCEL)
+        {
+            EndDialog(hDlg, IDCANCEL);
+            return TRUE;
+        }
+        break;
+    }
+    return FALSE;
+}
+
+void ConfigureScheduledScan(HWND owner)
+{
+    ScheduleDialogState state{};
+    state.minutes = g_scheduleIntervalMinutes;
+    DialogBoxParamW(hInst, MAKEINTRESOURCEW(IDD_SCHEDULE_DIALOG), owner, ScheduleDialogProc, reinterpret_cast<LPARAM>(&state));
+    if (!state.accepted)
+    {
+        return;
+    }
+
+    g_scheduleIntervalMinutes = state.minutes;
+    SetTimer(owner, kScheduleTimerId, g_scheduleIntervalMinutes * 60 * 1000, nullptr);
+    MessageBoxW(owner, L"Расписание сохранено.", L"Расписание", MB_OK | MB_ICONINFORMATION);
+}
+
+void ToggleScheduledScan(HWND owner)
+{
+    g_scheduleEnabled = !g_scheduleEnabled;
+    if (g_scheduleEnabled)
+    {
+        SetTimer(owner, kScheduleTimerId, g_scheduleIntervalMinutes * 60 * 1000, nullptr);
+    }
+    else
+    {
+        KillTimer(owner, kScheduleTimerId);
+    }
+
+    UpdateStatusText(g_scheduleEnabled ? L"Статус: расписание включено" : L"Статус: расписание выключено");
+}
+
+DWORD WINAPI MonitorThreadProc(LPVOID param)
+{
+    const std::wstring dir = *reinterpret_cast<std::wstring*>(param);
+    delete reinterpret_cast<std::wstring*>(param);
+
+    HANDLE change = FindFirstChangeNotificationW(
+        dir.c_str(),
+        FALSE,
+        FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_DIR_NAME);
+    if (change == INVALID_HANDLE_VALUE)
+    {
+        return 0;
+    }
+
+    while (WaitForSingleObject(change, 5000) == WAIT_OBJECT_0)
+    {
+        bool infected = false;
+        std::wstring summary;
+        RpcCallScanPath(dir, true, infected, summary);
+        FindNextChangeNotification(change);
+    }
+
+    FindCloseChangeNotification(change);
+    return 0;
+}
+
+void AddMonitoringDirectory(HWND owner)
+{
+    BROWSEINFOW bi{};
+    bi.hwndOwner = owner;
+    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+    bi.lpszTitle = L"Выберите папку для мониторинга";
+    PIDLIST_ABSOLUTE folder = SHBrowseForFolderW(&bi);
+    if (!folder)
+    {
+        return;
+    }
+
+    wchar_t path[MAX_PATH]{};
+    if (SHGetPathFromIDListW(folder, path))
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        g_monitoredDirectories.emplace_back(path);
+        CloseHandle(CreateThread(nullptr, 0, MonitorThreadProc, new std::wstring(path), 0, nullptr));
+        MessageBoxW(owner, L"Мониторинг папки запущен.", L"Мониторинг", MB_OK | MB_ICONINFORMATION);
+    }
+
+    CoTaskMemFree(folder);
+}
+
+void ShowMonitoredDirectories(HWND owner)
+{
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    if (g_monitoredDirectories.empty())
+    {
+        MessageBoxW(owner, L"Папки мониторинга не настроены.", L"Мониторинг", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+
+    std::wstring text;
+    for (const auto& dir : g_monitoredDirectories)
+    {
+        text += dir + L"\r\n";
+    }
+    MessageBoxW(owner, text.c_str(), L"Папки мониторинга", MB_OK | MB_ICONINFORMATION);
+}
+
 void CenterWindow(HWND hWnd)
 {
     RECT rect{};
@@ -790,6 +1177,7 @@ bool EnsureAuthenticated(HWND hWnd, std::wstring& username)
     UpdateLicenseText(L"Лицензия: неизвестно");
     UpdateExpirationText(L"Срок действия: -");
     SetAntivirusControlsEnabled(false);
+    RefreshAvStatusText();
 
     while (true)
     {
@@ -828,6 +1216,7 @@ bool EnsureLicense(HWND hWnd, const std::wstring& username)
             UpdateExpirationText(L"Срок действия: " + expiration);
             UpdateStatusText(L"Антивирус активен");
             SetAntivirusControlsEnabled(true);
+            RefreshAvStatusText();
             return true;
         }
 
@@ -843,10 +1232,12 @@ bool EnsureLicense(HWND hWnd, const std::wstring& username)
         UpdateExpirationText(L"Срок действия: -");
         UpdateStatusText(L"Антивирус заблокирован");
         SetAntivirusControlsEnabled(false);
+        RefreshAvStatusText();
 
         std::wstring activationKey;
         if (!ShowActivationDialog(hWnd, activationKey))
         {
+            RefreshAvStatusText();
             return false;
         }
 
@@ -868,6 +1259,7 @@ void RefreshLicenseDisplayOnly(HWND hWnd)
     if (userStatus != ERROR_SUCCESS || !authenticated)
     {
         SetAntivirusControlsEnabled(false);
+        RefreshAvStatusText();
         return;
     }
 
@@ -883,6 +1275,7 @@ void RefreshLicenseDisplayOnly(HWND hWnd)
         UpdateExpirationText(L"Срок действия: " + expiration);
         UpdateStatusText(L"Антивирус активен");
         SetAntivirusControlsEnabled(true);
+        RefreshAvStatusText();
         return;
     }
 
@@ -898,6 +1291,7 @@ void RefreshLicenseDisplayOnly(HWND hWnd)
     UpdateExpirationText(L"Срок действия: -");
     UpdateStatusText(L"Антивирус заблокирован");
     SetAntivirusControlsEnabled(false);
+    RefreshAvStatusText();
 }
 
 void RefreshLicenseStatus(HWND hWnd)
@@ -1035,7 +1429,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow, bool startHidden)
     hInst = hInstance;
 
     HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
+        CW_USEDEFAULT, 0, 380, 240, nullptr, nullptr, hInstance, nullptr);
 
     if (!hWnd)
     {
@@ -1071,9 +1465,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         g_licenseText = CreateWindowW(L"STATIC", L"Лицензия: -", WS_CHILD | WS_VISIBLE,
             10, 60, 320, 20, hWnd, reinterpret_cast<HMENU>(IDC_LICENSE_TEXT), hInst, nullptr);
         g_expirationText = CreateWindowW(L"STATIC", L"Срок действия: -", WS_CHILD | WS_VISIBLE,
-            10, 85, 320, 20, hWnd, reinterpret_cast<HMENU>(IDC_EXPIRATION_TEXT), hInst, nullptr);
-        g_scanButton = CreateWindowW(L"BUTTON", L"Сканировать", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            10, 115, 120, 28, hWnd, reinterpret_cast<HMENU>(IDC_SCAN_BUTTON), hInst, nullptr);
+            10, 85, 340, 20, hWnd, reinterpret_cast<HMENU>(IDC_EXPIRATION_TEXT), hInst, nullptr);
+        g_avStatusText = CreateWindowW(L"STATIC", L"Антивирусные базы: -", WS_CHILD | WS_VISIBLE,
+            10, 110, 340, 20, hWnd, reinterpret_cast<HMENU>(IDC_AV_STATUS_TEXT), hInst, nullptr);
+        g_scanButton = CreateWindowW(L"BUTTON", L"Сканировать файл", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            10, 140, 160, 28, hWnd, reinterpret_cast<HMENU>(IDC_SCAN_BUTTON), hInst, nullptr);
+        if (HMENU hMenu = LoadMenuW(hInst, MAKEINTRESOURCEW(IDC_RBPOPZ6SEM)))
+        {
+            SetMenu(hWnd, hMenu);
+        }
         SetAntivirusControlsEnabled(false);
         SetTimer(hWnd, 1, 30000, nullptr);
         PostMessageW(hWnd, WM_APP_STARTUP, 0, 0);
@@ -1107,14 +1507,31 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             ShowMainWindow(hWnd);
             break;
         case IDC_SCAN_BUTTON:
-            if (!g_antivirusEnabled)
-            {
-                MessageBoxW(hWnd, L"Антивирус заблокирован: нет действующей лицензии.", L"Сканирование", MB_OK | MB_ICONWARNING);
-            }
-            else
-            {
-                MessageBoxW(hWnd, L"Демо-сканирование завершено. Угроз не обнаружено.", L"Сканирование", MB_OK | MB_ICONINFORMATION);
-            }
+            ScanSelectedFile(hWnd);
+            break;
+        case IDM_SCAN_FILE:
+            ScanSelectedFile(hWnd);
+            break;
+        case IDM_SCAN_FOLDER:
+            ScanSelectedFolder(hWnd);
+            break;
+        case IDM_SCAN_RESULTS:
+            ShowScanResults(hWnd);
+            break;
+        case IDM_SCAN_ALL_DRIVES:
+            ScanAllFixedDrives(hWnd);
+            break;
+        case IDM_SCHEDULE_SCAN:
+            ToggleScheduledScan(hWnd);
+            break;
+        case IDM_SCHEDULE_SETTINGS:
+            ConfigureScheduledScan(hWnd);
+            break;
+        case IDM_MONITOR_ADD:
+            AddMonitoringDirectory(hWnd);
+            break;
+        case IDM_MONITOR_LIST:
+            ShowMonitoredDirectories(hWnd);
             break;
         default:
             return DefWindowProc(hWnd, message, wParam, lParam);
@@ -1125,6 +1542,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         if (wParam == 1)
         {
             RefreshLicenseDisplayOnly(hWnd);
+        }
+        else if (wParam == kScheduleTimerId && g_scheduleEnabled && g_antivirusEnabled)
+        {
+            ScanAllFixedDrives(hWnd);
         }
         break;
     case WM_APP_STARTUP:
@@ -1155,6 +1576,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_DESTROY:
         RemoveTrayIcon();
         KillTimer(hWnd, 1);
+        KillTimer(hWnd, kScheduleTimerId);
         PostQuitMessage(0);
         break;
     default:
