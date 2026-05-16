@@ -32,8 +32,10 @@ jobs:
           Copy-Item $gui.FullName artifact/
           Copy-Item $svc.FullName artifact/
           Get-ChildItem $gui.Directory.FullName -Filter *.dll | ForEach-Object { Copy-Item $_.FullName artifact/ }
-          if (Test-Path $gui.Directory.FullName/data) {
-            Copy-Item -Recurse $gui.Directory.FullName/data artifact/data
+          $guiDataPath = Join-Path $gui.Directory.FullName 'data'
+          if (Test-Path $guiDataPath) {
+            $artifactDataPath = Join-Path 'artifact' 'data'
+            Copy-Item -Recurse $guiDataPath $artifactDataPath
           }
 
       - name: Upload artifact
