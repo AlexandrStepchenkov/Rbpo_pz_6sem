@@ -6,6 +6,10 @@ if(NOT CMAKE_GENERATOR_PLATFORM)
     set(CMAKE_GENERATOR_PLATFORM x64)
 endif()
 
+if(MSVC)
+    add_compile_options(/W4 /WX-)
+endif()
+
 set(RBPO_COMMON_INCLUDES
     Rbpo_pz_6sem
     Rbpo_pz_6sem/common
@@ -30,13 +34,7 @@ target_compile_definitions(Rbpo_pz_6sem PRIVATE
     _UNICODE
 )
 
-target_compile_options(Rbpo_pz_6sem PRIVATE
-    /Wall
-    /WX-
-    /Oy-
-    /wd4710
-    /wd4711
-)
+target_compile_options(Rbpo_pz_6sem PRIVATE /Oy-)
 
 target_link_libraries(Rbpo_pz_6sem PRIVATE
     user32
@@ -59,13 +57,7 @@ target_compile_definitions(RbpoPz6SemService PRIVATE
     _UNICODE
 )
 
-target_compile_options(RbpoPz6SemService PRIVATE
-    /Wall
-    /WX-
-    /Oy-
-    /wd4710
-    /wd4711
-)
+target_compile_options(RbpoPz6SemService PRIVATE /Oy-)
 
 target_link_libraries(RbpoPz6SemService PRIVATE
     rpcrt4

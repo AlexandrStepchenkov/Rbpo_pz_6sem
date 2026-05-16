@@ -16,7 +16,7 @@
 #include <Aclapi.h>
 #include <Accctrl.h>
 
-#pragma warning(disable : 4710 4711)
+#pragma warning(disable : 4710 4711 4820 5039 5045)
 
 #include "../common/AppConfig.h"
 #include "../rpc/ServiceControl.h"
